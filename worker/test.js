@@ -59,7 +59,7 @@ try {
   });
   await t('landing page, app and assets', async () => {
     const landing = await (await fetch(base + '/')).text();
-    assert.ok(landing.includes('Shelve the ones') && landing.includes('/app/'));
+    assert.ok(landing.includes('Track what you watch') && landing.includes('/app/'));
     assert.equal((await fetch(base + '/app', { redirect: 'manual' })).status, 301);
     assert.ok((await (await fetch(base + '/app/')).text()).includes('manifest.webmanifest'));
     assert.equal((await fetch(base + '/app/icon-180.png')).headers.get('content-type'), 'image/png');
@@ -191,6 +191,8 @@ try {
   await t('export, then delete account removes everything', async () => {
     const ex = (await j('/api/export', { headers: as(B) })).body;
     assert.ok(Array.isArray(ex.entries));
+    const md = await (await fetch(base + '/api/export?format=md', { headers: as(A) })).text();
+    assert.ok(md.includes('# AI agency to $30k/mo') && md.includes('## Transcript') && md.includes('dentists'));
     assert.equal((await j('/api/me', { method: 'DELETE', headers: as(B) })).status, 200);
     assert.equal((await j('/api/entries', { headers: as(B) })).status, 401);
     assert.equal((await j('/api/entries', { headers: as(A) })).status, 200, 'A unaffected');

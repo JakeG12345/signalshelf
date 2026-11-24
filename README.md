@@ -1,8 +1,8 @@
 # Signal Shelf
 
-**Letterboxd for money-making & AI videos and podcasts, with Claude as your memory.**
+**Track the YouTube videos and podcasts you watch, with transcripts. Let Claude read them. Share your shelf.**
 
-Save what you watch and listen to, give it a Signal Rating (1–5), tag the monetization model, write the key takeaways, share a public shelf of your best picks, and ask Claude about all of it. Works on iPhone, desktop and in Claude.
+Save what you watch and listen to with its transcript, rate it from one to five bars, tag it and add notes. Connect Claude (or export the transcripts as Markdown) to summarise or build from what you watched, and share a public shelf of your picks, Letterboxd-style. Works on iPhone, desktop and in Claude.
 
 | Part | What it does |
 |---|---|
@@ -41,7 +41,7 @@ Transcripts: YouTube blocks most cloud servers, so the Worker gets transcripts t
 
 ## Claude tools
 
-`search_transcripts`, `list_watched_media`, `get_full_transcript`, `get_top_rated`, `list_by_monetization_model`, `rate_and_annotate`, `save_link`, `get_public_shelf`.
+`search_transcripts`, `list_watched_media`, `get_full_transcript`, `get_top_rated`, `list_by_tag`, `rate_and_annotate`, `save_link`, `get_public_shelf`.
 
 > *"What are my top-rated AI Agency videos? Summarise the takeaways."*
 > *"Save this link, rate it 4 and add 3 takeaways: https://youtu.be/…"*

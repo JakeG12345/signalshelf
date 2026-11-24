@@ -4,7 +4,7 @@
 export const DEFAULT_SHELF_SETTINGS = {
   title: 'My Signal Shelf',
   author: '',
-  tagline: 'The highest-signal videos & podcasts I\'ve found on making money and building with AI.',
+  tagline: 'Videos and podcasts worth your time.',
   minRating: 4,
   includeTakeaways: true,
   maxTakeaways: 5,
@@ -95,7 +95,7 @@ export function renderShelfHtml(data, { jsonHref = 'shelf.json', ctaUrl = '', ca
 </article>`;
   }).join('\n');
   const filters = data.models.length > 1
-    ? `<nav class="filters" aria-label="Filter by model"><button class="chip on" data-f="">All ${data.count}</button>${data.models.map(m => `<button class="chip" data-f="${esc(m.name.toLowerCase())}">${esc(m.name)} ${m.count}</button>`).join('')}</nav>`
+    ? `<nav class="filters" aria-label="Filter by tag"><button class="chip on" data-f="">All ${data.count}</button>${data.models.map(m => `<button class="chip" data-f="${esc(m.name.toLowerCase())}">${esc(m.name)} ${m.count}</button>`).join('')}</nav>`
     : '';
   const updated = new Date(data.generated_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
   const floor = data.min_rating >= 5 ? 'Only five-bar picks' : `${data.count} pick${data.count === 1 ? '' : 's'} rated ${data.min_rating} bars or higher`;

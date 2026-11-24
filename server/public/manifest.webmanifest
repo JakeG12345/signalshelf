@@ -1,7 +1,7 @@
 {
   "name": "Signal Shelf",
   "short_name": "Signal Shelf",
-  "description": "Rate and remember the money-making & AI videos and podcasts worth your time.",
+  "description": "Track the YouTube videos and podcasts you watch, with transcripts.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

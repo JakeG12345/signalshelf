@@ -180,6 +180,20 @@ async function privateApi(request, url, ctx) {
     return json({ ok: true, count: data.count, settings, handle: u.handle, url: `${url.origin}/u/${u.handle}` });
   }
 
+  if (path === '/api/export' && method === 'GET' && url.searchParams.get('format') === 'md') {
+    const one = url.searchParams.get('id');
+    const entries = one ? [await store.get(one)].filter(Boolean) : await store.all();
+    const md = entries.map(e => [
+      `# ${e.title}`,
+      [e.creator, e.url, e.signal_rating ? `Rated ${e.signal_rating}/5` : '', (e.monetization_models || []).join(', ')].filter(Boolean).join(' | '),
+      e.key_takeaways?.length ? `## Takeaways\n${e.key_takeaways.map(t => `- ${t}`).join('\n')}` : '',
+      e.personal_notes ? `## Notes\n${e.personal_notes}` : '',
+      e.transcript ? `## Transcript\n${e.transcript}` : ''
+    ].filter(Boolean).join('\n\n')).join('\n\n---\n\n');
+    return new Response(md, { headers: { 'Content-Type': 'text/markdown; charset=utf-8', 'Cache-Control': 'no-store',
+      'Content-Disposition': `attachment; filename="signal-shelf-transcripts-${new Date().toISOString().slice(0, 10)}.md"` } });
+  }
+
   if (path === '/api/export' && method === 'GET') {
     return json({ schema: 3, exported_at: new Date().toISOString(), user: { handle: user.handle, display_name: user.display_name },
       shelf: await store.getSetting('shelf', {}), entries: await store.all() }, 200, {

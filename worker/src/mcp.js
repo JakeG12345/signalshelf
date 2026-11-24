@@ -1,5 +1,5 @@
 // Remote MCP server (Streamable HTTP, stateless JSON responses) for Claude on iPhone, web and desktop.
-import { APP_VERSION, MONETIZATION_MODELS } from '../../shared/core.js';
+import { APP_VERSION } from '../../shared/core.js';
 import { captureLink } from '../../shared/capture.js';
 import { normalizeShelfSettings } from '../../shared/shelf-render.js';
 
@@ -8,15 +8,15 @@ const MAX_TEXT = 120_000;
 
 const SOURCE = { type: 'string', enum: ['youtube', 'apple_podcasts', 'web', 'manual'], description: 'Filter by source' };
 const RATING = { type: 'integer', minimum: 1, maximum: 5 };
-const MODEL = { type: 'string', description: `Monetization model tag, e.g. ${MONETIZATION_MODELS.slice(0, 6).join(', ')}` };
+const MODEL = { type: 'string', description: 'One of the user\'s own tags (see list_by_tag for the tags in use)' };
 const STATUS = { type: 'string', enum: ['watched', 'to_watch', 'in_progress'] };
 
 const TOOLS = [
   {
     name: 'list_watched_media',
-    description: 'List saved videos, podcast episodes and links from the user\'s Signal Shelf, newest first or by Signal Rating, with optional filters.',
+    description: 'List the YouTube videos, podcast episodes and links the user has saved to Signal Shelf, newest first or by rating, with optional filters.',
     inputSchema: { type: 'object', properties: {
-      source: SOURCE, min_rating: { ...RATING, description: 'Only items rated at least this' }, monetization_model: MODEL, status: STATUS,
+      source: SOURCE, min_rating: { ...RATING, description: 'Only items rated at least this' }, tag: MODEL, status: STATUS,
       sort: { type: 'string', enum: ['recent', 'rating', 'oldest', 'title'], default: 'recent' },
       limit: { type: 'integer', minimum: 1, maximum: 100, default: 20 }
     } },
@@ -24,10 +24,10 @@ const TOOLS = [
   },
   {
     name: 'search_transcripts',
-    description: 'Full-text search across transcripts, titles, creators, key takeaways, personal notes and monetization tags. Returns matching snippets.',
+    description: 'Full-text search across transcripts, titles, creators, key takeaways, personal notes and tags. Returns matching snippets.',
     inputSchema: { type: 'object', required: ['query'], properties: {
       query: { type: 'string', description: 'Keywords, e.g. "cold email agency pricing"' },
-      source: SOURCE, min_rating: RATING, monetization_model: MODEL,
+      source: SOURCE, min_rating: RATING, tag: MODEL,
       limit: { type: 'integer', minimum: 1, maximum: 30, default: 10 }
     } },
     annotations: { readOnlyHint: true }
@@ -43,26 +43,26 @@ const TOOLS = [
   },
   {
     name: 'get_top_rated',
-    description: 'The highest Signal Rating items (default 4★+), optionally for one monetization model.',
+    description: 'The user\'s highest-rated items (default 4 of 5 or more), optionally for one tag.',
     inputSchema: { type: 'object', properties: {
-      min_rating: { ...RATING, default: 4 }, monetization_model: MODEL,
+      min_rating: { ...RATING, default: 4 }, tag: MODEL,
       limit: { type: 'integer', minimum: 1, maximum: 50, default: 15 }
     } },
     annotations: { readOnlyHint: true }
   },
   {
-    name: 'list_by_monetization_model',
-    description: 'Without a model: counts and average ratings per monetization model. With a model: the items tagged with it, best first.',
-    inputSchema: { type: 'object', properties: { model: MODEL, limit: { type: 'integer', minimum: 1, maximum: 100, default: 25 } } },
+    name: 'list_by_tag',
+    description: 'Without a tag: the tags in use with counts and average ratings. With a tag: the items carrying it, best first.',
+    inputSchema: { type: 'object', properties: { tag: MODEL, limit: { type: 'integer', minimum: 1, maximum: 100, default: 25 } } },
     annotations: { readOnlyHint: true }
   },
   {
     name: 'rate_and_annotate',
-    description: 'Save a Signal Rating, monetization model tags, key takeaways and/or personal notes on an entry. Only fields you pass change. Use add_takeaways / append_notes to add without overwriting.',
+    description: 'Save a 1-5 rating, tags, key takeaways (e.g. a summary you wrote from the transcript) and/or personal notes on an entry. Only fields you pass change. Use add_takeaways / append_notes to add without overwriting.',
     inputSchema: { type: 'object', required: ['id'], properties: {
       id: { type: 'string' },
       signal_rating: { type: ['integer', 'null'], minimum: 1, maximum: 5, description: '1-5, or null to clear' },
-      monetization_models: { type: 'array', items: { type: 'string' }, description: 'Replaces the tag list' },
+      tags: { type: 'array', items: { type: 'string' }, description: 'Replaces the tag list' },
       key_takeaways: { type: 'array', items: { type: 'string' }, description: 'Replaces all takeaways' },
       add_takeaways: { type: 'array', items: { type: 'string' }, description: 'Appends takeaways' },
       personal_notes: { type: 'string', description: 'Replaces notes' },
@@ -89,7 +89,7 @@ const TOOLS = [
 
 const compact = e => ({
   id: e.id, source: e.source, title: e.title, creator: e.creator, url: e.url, watched_at: e.watched_at,
-  signal_rating: e.signal_rating, monetization_models: e.monetization_models, key_takeaways: e.key_takeaways,
+  signal_rating: e.signal_rating, tags: e.monetization_models, key_takeaways: e.key_takeaways,
   status: e.status, transcript_status: e.transcript_status,
   transcript_chars: e.transcript_chars ?? (e.transcript || '').length,
   ...(e.match_snippet ? { match_snippet: e.match_snippet } : {})
@@ -105,12 +105,12 @@ async function callTool(name, a = {}, { store, origin, user, guardCapture, captu
   switch (name) {
     case 'list_watched_media':
       return text((await store.query({
-        source: a.source, minRating: a.min_rating, model: a.monetization_model, status: a.status,
+        source: a.source, minRating: a.min_rating, model: a.tag ?? a.monetization_model, status: a.status,
         sort: a.sort || 'recent', limit: int(a.limit, 20, 1, 100)
       })).map(compact));
     case 'search_transcripts': {
       if (!String(a.query || '').trim()) return toolError('query is required');
-      const rows = await store.query({ q: a.query, source: a.source, minRating: a.min_rating, model: a.monetization_model, limit: int(a.limit, 10, 1, 30) });
+      const rows = await store.query({ q: a.query, source: a.source, minRating: a.min_rating, model: a.tag ?? a.monetization_model, limit: int(a.limit, 10, 1, 30) });
       return text(rows.length ? rows.map(compact) : `No matches for "${a.query}".`);
     }
     case 'get_full_transcript': {
@@ -122,16 +122,18 @@ async function callTool(name, a = {}, { store, origin, user, guardCapture, captu
       return text({ ...e, transcript: t.length > max ? t.slice(0, max) + `\n\n[truncated: ${t.length - max} more chars]` : t, transcript_chars: t.length });
     }
     case 'get_top_rated':
-      return text((await store.query({ minRating: int(a.min_rating, 4, 1, 5), model: a.monetization_model, sort: 'rating', limit: int(a.limit, 15, 1, 50) })).map(compact));
-    case 'list_by_monetization_model': {
-      if (!a.model) {
+      return text((await store.query({ minRating: int(a.min_rating, 4, 1, 5), model: a.tag ?? a.monetization_model, sort: 'rating', limit: int(a.limit, 15, 1, 50) })).map(compact));
+    case 'list_by_tag': {
+      const tag = a.tag ?? a.model;
+      if (!tag) {
         const s = await store.stats();
-        return text({ presets: MONETIZATION_MODELS, in_use: s.models, totals: { entries: s.total, rated: s.rated, avg_rating: s.avg_rating } });
+        return text({ in_use: s.models.map(m => ({ tag: m.model, count: m.count, avg_rating: m.avg_rating })), totals: { entries: s.total, rated: s.rated, avg_rating: s.avg_rating } });
       }
-      return text((await store.query({ model: a.model, sort: 'rating', limit: int(a.limit, 25, 1, 100) })).map(compact));
+      return text((await store.query({ model: tag, sort: 'rating', limit: int(a.limit, 25, 1, 100) })).map(compact));
     }
     case 'rate_and_annotate': {
-      const { id, ...rest } = a;
+      const { id, tags, ...rest } = a;
+      if (tags !== undefined) rest.monetization_models = tags;
       const patch = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined));
       if (!Object.keys(patch).length) return toolError('Pass at least one field to update.');
       return text(compact(await store.update(String(id || ''), patch)));
@@ -167,7 +169,7 @@ async function handleMessage(msg, ctx) {
         protocolVersion: PROTOCOL_VERSIONS.includes(requested) ? requested : PROTOCOL_VERSIONS[1],
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: 'signal-shelf', title: 'Signal Shelf', version: APP_VERSION },
-        instructions: 'Signal Shelf is the user\'s personal library of money-making and AI videos, podcasts and links, each with a 1-5 Signal Rating, monetization model tags, key takeaways and private notes. Search it before answering questions about what the user has watched or learned, cite entries by title, and use rate_and_annotate to save takeaways when the user asks.'
+        instructions: 'Signal Shelf is the user\'s log of the YouTube videos, podcasts and links they have watched or saved, with full transcripts where available, a 1-5 rating, tags, key takeaways and private notes. Use it to answer questions about what they watched, to summarise or compare transcripts (get_full_transcript), or as source material for something they want to build. Cite entries by title. Use rate_and_annotate to save a summary as key takeaways when asked.'
       });
     }
     case 'ping':

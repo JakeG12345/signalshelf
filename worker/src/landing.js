@@ -2,8 +2,8 @@
 import { esc, FONT_LINKS, BASE_CSS, RATING_LABELS, barsHtml, LOGO_SVG } from '../../shared/theme.js';
 
 export function renderLanding({ origin, shelves = [], top = [] }) {
-  const title = 'Signal Shelf: rate the signal in business and AI videos';
-  const desc = 'A Letterboxd-style log for money-making and AI videos and podcasts. Rate each one from one to five bars, keep what you learned, and share your shelf.';
+  const title = 'Signal Shelf: track what you watch';
+  const desc = 'Track the YouTube videos and podcasts you watch, with transcripts. Connect Claude or export them, and share your shelf.';
 
   const topRows = top.map(t => `
       <li><a href="${esc(t.url)}" target="_blank" rel="noopener noreferrer">${esc(t.title)}</a>
@@ -61,7 +61,7 @@ ${FONT_LINKS}
   .steps p { margin:0; color:#2c3033; max-width:34ch; }
 
   section.block { padding:56px 0 0; }
-  section.block > h2 { font-size:24px; margin:0 0 4px; }
+  section.block > h2 { font-size:24px; margin:0 0 16px; }
   section.block > p { margin:0 0 18px; color:var(--mute); }
   ul.rows { list-style:none; margin:0; padding:0; border-top:1px solid var(--line); }
   ul.rows li { display:grid; grid-template-columns:minmax(0, 1fr) auto auto; gap:6px 22px; align-items:center; padding:14px 0; border-bottom:1px solid var(--line); }
@@ -102,18 +102,18 @@ ${FONT_LINKS}
 
   <section class="hero">
     <div>
-      <h1 class="wide">Most business videos are noise. Shelve the ones that weren't.</h1>
-      <p class="lede">Signal Shelf is a log for the business and AI videos and podcasts you watch, in the spirit of Letterboxd. Rate each one from one to five bars, keep what you learned, and share the shelf.</p>
+      <h1 class="wide">Track what you watch. Let Claude read it.</h1>
+      <p class="lede">Save YouTube videos and podcasts with their transcripts. Rate them, share your shelf.</p>
       <div class="ctas">
         <a class="btn solid" href="/app/">Start a shelf</a>
         ${shelves[0] ? `<a class="btn" href="/u/${esc(shelves[0].handle)}">See a real shelf</a>` : ''}
       </div>
-      <p class="note">Free. You can try it without an account.</p>
+      <p class="note">Free. No account needed.</p>
     </div>
 
     <div class="tuner" id="tuner">
-      <p class="ask">Think of the last video you watched.</p>
-      <p class="sub">How much of it was signal?</p>
+      <p class="ask">The last video you watched.</p>
+      <p class="sub">How good was it?</p>
       <span class="bars xl" role="group" aria-label="Rate from 1 to 5 bars">
         ${[1, 2, 3, 4, 5].map(n => `<button type="button" data-n="${n}" aria-label="${n} of 5, ${RATING_LABELS[n]}"></button>`).join('')}
       </span>
@@ -122,35 +122,22 @@ ${FONT_LINKS}
   </section>
 
   <section class="steps">
-    <div><span class="n wide">1</span><h2>Save it</h2><p>Share a YouTube video, podcast episode or any link from your phone, or save from Chrome. Transcripts come along when the video has captions.</p></div>
-    <div><span class="n wide">2</span><h2>Rate the signal</h2><p>One bar for noise, five for must watch. Tag the business model and write down what you would actually use.</p></div>
-    <div><span class="n wide">3</span><h2>Share it, or ask it</h2><p>Publish your best picks at your own link. Connect Claude to search everything you have saved.</p></div>
+    <div><span class="n wide">1</span><h2>Save</h2><p>Videos and podcasts, transcripts included.</p></div>
+    <div><span class="n wide">2</span><h2>Rate</h2><p>One to five bars. Add notes.</p></div>
+    <div><span class="n wide">3</span><h2>Use</h2><p>Connect Claude or export. Share your shelf.</p></div>
   </section>
 
   ${top.length ? `<section class="block">
-    <h2 class="wide">Highest signal right now</h2>
-    <p>What people have put on their public shelves.</p>
+    <h2 class="wide">Top rated right now</h2>
     <ul class="rows top">${topRows}</ul>
   </section>` : ''}
 
   ${shelves.length ? `<section class="block">
-    <h2 class="wide">Recently updated shelves</h2>
-    <p>Public shelves from people using Signal Shelf.</p>
+    <h2 class="wide">Recent shelves</h2>
     <ul class="rows shelves">${shelfRows}</ul>
   </section>` : ''}
 
-  <section class="block">
-    <h2 class="wide">Also in the box</h2>
-    <p>Everything is free while Signal Shelf is new.</p>
-    <ul class="also">
-      <li>Search every transcript, takeaway and note</li>
-      <li>A public shelf at your own username</li>
-      <li>A Claude connector: ask what you learned about pricing</li>
-      <li>A Chrome extension that can save as you watch</li>
-      <li>An iPhone share shortcut and home-screen app</li>
-      <li>Private notes stay private. Export or delete any time.</li>
-    </ul>
-  </section>
+
 
   <footer>
     <span>Signal Shelf</span>
@@ -160,7 +147,7 @@ ${FONT_LINKS}
 <script>
   (function () {
     var labels = ${JSON.stringify(RATING_LABELS)};
-    var notes = ['', 'You wanted that time back.', 'One idea, padded out.', 'Worth the watch.', 'You took notes.', 'You sent it to someone.'];
+    var notes = ['', '', '', '', '', ''];
     var buttons = [].slice.call(document.querySelectorAll('#tuner button'));
     var set = 0;
     function paint(n) { buttons.forEach(function (b, i) { b.classList.toggle('on', i < n); }); }

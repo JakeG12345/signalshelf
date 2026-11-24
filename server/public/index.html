@@ -170,7 +170,7 @@
     <div class="fsel">
     <select id="f-source"><option value="">All sources</option><option value="youtube">YouTube</option><option value="apple_podcasts">Podcasts</option></select>
     <select id="f-rating"><option value="">Any signal</option><option value="5">5 bars</option><option value="4">4 bars or more</option><option value="3">3 bars or more</option><option value="1">Rated</option></select>
-    <select id="f-model"><option value="">All models</option></select>
+    <select id="f-model"><option value="">All tags</option></select>
     <select id="f-status"><option value="">Any status</option><option value="watched">Watched</option><option value="to_watch">To watch</option><option value="in_progress">In progress</option></select>
     <select id="f-sort"><option value="">Newest</option><option value="rating">Highest signal</option><option value="oldest">Oldest</option><option value="title">Title</option></select>
     </div>
@@ -200,17 +200,18 @@
       </div>
     </div>
 
-    <label class="lbl">Monetization models</label>
+    <label class="lbl">Tags</label>
     <div class="tagpick" id="m-tags"></div>
 
     <label class="lbl">Key takeaways <span>(one per line)</span></label>
-    <textarea id="m-takeaways" rows="5" placeholder="Charge setup fee + monthly retainer&#10;Find clients in niche Facebook groups"></textarea>
+    <textarea id="m-takeaways" rows="5" placeholder="What was worth remembering"></textarea>
 
     <label class="lbl">Personal notes <span>(private, never published)</span></label>
-    <textarea id="m-notes" rows="4" placeholder="How this applies to me, next actions…"></textarea>
+    <textarea id="m-notes" rows="4" placeholder="Only you see these"></textarea>
 
     <details id="m-tdetails">
       <summary id="m-tsummary">Transcript</summary>
+      <p style="margin:8px 0"><button type="button" class="copy" id="m-copyt">Copy transcript</button></p>
       <textarea id="m-transcript" rows="12" placeholder="No transcript captured. You can paste one here."></textarea>
     </details>
 
@@ -313,7 +314,7 @@
     <form class="row" id="switchform"><input id="switchkey" placeholder="Paste a private link or key" autocapitalize="none" autocorrect="off" style="flex:1;min-width:0" /><button type="submit">Switch</button></form>
 
     <label class="lbl">Your data</label>
-    <p><a href="#" id="c-export">Download all data (JSON)</a> · <a href="#" id="c-delete" style="color:var(--red)">Delete my shelf</a></p>
+    <p><a href="#" id="c-export-md">Export transcripts (Markdown, for Claude or any AI)</a><br><a href="#" id="c-export">Download all data (JSON)</a> · <a href="#" id="c-delete" style="color:var(--red)">Delete my shelf</a></p>
   </div>
 </div>
 
@@ -390,9 +391,9 @@ async function loadMeta() {
     s.links ? n(s.links, 'link', 'links') : '', `<b>${s.rated || 0}</b> rated`, s.avg_rating ? `average signal <b>${Number(s.avg_rating).toFixed(1)}</b>` : '',
     s.missing_transcripts ? n(s.missing_transcripts, 'missing transcript', 'missing transcripts') : ''].filter(Boolean).join(', ');
   const used = (s.models || []).map(m => m.model);
-  const all = [...new Set([...META.monetizationModels, ...used])];
+  const all = used;
   const sel = $('#f-model'), prev = sel.value;
-  sel.innerHTML = '<option value="">All models</option>' + all.map(m => {
+  sel.innerHTML = '<option value="">All tags</option>' + all.map(m => {
     const c = (s.models || []).find(x => x.model.toLowerCase() === m.toLowerCase());
     return `<option value="${esc(m)}">${esc(m)}${c ? ` (${c.count})` : ''}</option>`;
   }).join('');
@@ -411,7 +412,7 @@ async function loadEntries() {
   if (seq !== loadSeq) return; // a newer search already started
   ITEMS = new Map(items.map(it => [it.id, it]));
   $('#list').innerHTML = items.length ? items.map(card).join('') :
-    `<div class="empty">${p.toString() ? 'Nothing matches. Clear the search or filters to see everything.' : '<b>Your shelf is empty.</b>Paste the link to the last video or podcast you finished, then give it one to five bars.'}</div>`;
+    `<div class="empty">${p.toString() ? 'Nothing matches. Clear the search or filters to see everything.' : '<b>Your shelf is empty.</b>Paste the link to the last video or podcast you watched.'}</div>`;
 }
 
 function card(it) {
@@ -439,11 +440,11 @@ function renderRate() {
     `<span class="hint">${LABELS[draft.rating]}<small>${draft.rating ? `${draft.rating} of 5 bars` : 'Tap a bar'}<span class="kbd">, or press 1 to 5</span></small></span>`;
 }
 function renderTags() {
-  const presets = META.monetizationModels;
+  const presets = (META.stats?.models || []).map(m => m.model).slice(0, 14); // your own tags, most used first
   const extras = [...draft.models].filter(m => !presets.some(p => p.toLowerCase() === m.toLowerCase()));
   $('#m-tags').innerHTML = [...presets, ...extras].map(m =>
     `<button type="button" data-tag="${esc(m)}" class="${[...draft.models].some(x => x.toLowerCase() === m.toLowerCase()) ? 'on' : ''}">${esc(m)}</button>`).join('') +
-    `<input id="m-newtag" placeholder="+ custom tag, Enter" maxlength="40" />`;
+    `<input id="m-newtag" placeholder="New tag, then Enter" maxlength="40" />`;
 }
 function setDirty(v = true) { dirty = v; $('#m-dirty').textContent = v ? 'Unsaved changes' : ''; }
 
@@ -708,16 +709,23 @@ $('#c-delete').addEventListener('click', async e => {
   try { await api('/api/me', { method: 'DELETE' }); setToken(''); location.reload(); }
   catch (err) { toast(err.message, true); }
 });
-$('#c-export').addEventListener('click', async e => {
-  e.preventDefault();
+async function download(path, filename) {
   try {
-    const res = await fetch('/api/export', { headers: { Authorization: `Bearer ${getToken()}` } });
+    const res = await fetch(path, { headers: { Authorization: `Bearer ${getToken()}` } });
     if (!res.ok) throw new Error(`Export failed (${res.status})`);
     const a = document.createElement('a');
     a.href = URL.createObjectURL(await res.blob());
-    a.download = `signal-shelf-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = filename;
     a.click();
   } catch (err) { toast(err.message, true); }
+}
+const today = () => new Date().toISOString().slice(0, 10);
+$('#c-export').addEventListener('click', e => { e.preventDefault(); download('/api/export', `signal-shelf-${today()}.json`); });
+$('#c-export-md').addEventListener('click', e => { e.preventDefault(); download('/api/export?format=md', `signal-shelf-transcripts-${today()}.md`); });
+$('#m-copyt').addEventListener('click', async () => {
+  const t = $('#m-transcript').value;
+  if (!t) return toast('No transcript to copy', true);
+  try { await navigator.clipboard.writeText(`${$('#m-title').value}\n\n${t}`); toast('Transcript copied'); } catch { toast('Copy failed', true); }
 });
 
 // Deep links: #k=<key> (private link), #add=<url> (iPhone share shortcut), #open=<id> (extension)
