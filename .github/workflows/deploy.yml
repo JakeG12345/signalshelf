@@ -30,6 +30,7 @@ jobs:
     needs: test
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    environment: production   # secrets live in the GitHub "production" environment
     defaults:
       run:
         working-directory: worker
@@ -52,7 +53,7 @@ jobs:
             if [ -z "${!v}" ]; then missing="$missing $v"; fi
           done
           if [ -n "$missing" ]; then
-            echo "::error::Missing repository secrets:$missing. Add them in GitHub → Settings → Secrets and variables → Actions."
+            echo "::error::Missing repository secrets:$missing. Add them in GitHub → Settings → Environments → production (or as repository secrets)."
             exit 1
           fi
           if [ ${#APP_TOKEN} -lt 16 ]; then
