@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; }
+  body { width: 320px; margin: 0; padding: 14px; font: 13px/1.45 -apple-system, BlinkMacSystemFont, Roboto, sans-serif; background: #14181c; color: #e6ebf0; }
+  .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .brand { font-weight: 700; font-size: 14px; }
+  .brand span { color: #00c030; }
+  .status { font-size: 11px; color: #8b98a5; display: flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; }
+  .dot.on { background: #00c030; } .dot.off { background: #f05454; }
+  .card { background: #1c2228; border: 1px solid #2c3440; border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+  .vt { font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .muted { color: #8b98a5; font-size: 12px; }
+  button { width: 100%; padding: 9px; border: none; border-radius: 6px; font: inherit; font-weight: 700; cursor: pointer; background: #00c030; color: #04130a; }
+  button:hover { filter: brightness(1.08); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.sec { background: #2c3440; color: #e6ebf0; width: auto; padding: 8px 12px; }
+  .stars { display: flex; gap: 2px; margin-top: 8px; align-items: center; }
+  .stars button { width: auto; background: none; padding: 0 2px; font-size: 22px; color: #3a4652; line-height: 1; }
+  .stars button.on { color: #40bcf4; }
+  .stars .lbl { margin-left: 6px; font-size: 11px; color: #8b98a5; }
+  .row { display: flex; gap: 6px; }
+  input[type=text] { flex: 1; min-width: 0; background: #0f1216; color: #e6ebf0; border: 1px solid #2c3440; border-radius: 6px; padding: 8px; font: inherit; }
+  input[type=text]:focus { outline: none; border-color: #40bcf4; }
+  .toggle { display: flex; justify-content: space-between; align-items: center; }
+  .switch { position: relative; width: 36px; height: 20px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; inset: 0; background: #3a4652; border-radius: 20px; transition: .2s; cursor: pointer; }
+  .slider:before { content: ''; position: absolute; width: 14px; height: 14px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+  .switch input:checked + .slider { background: #00c030; }
+  .switch input:checked + .slider:before { transform: translateX(16px); }
+  select { background: #0f1216; color: #e6ebf0; border: 1px solid #2c3440; border-radius: 6px; padding: 4px 6px; font: inherit; }
+  #msg { min-height: 18px; font-size: 12px; color: #8b98a5; margin: 2px 0 8px; }
+  #msg.err { color: #ff9b9b; } #msg.ok { color: #7ee29a; }
+  a { color: #40bcf4; text-decoration: none; font-size: 12px; }
+  .foot { display: flex; justify-content: space-between; }
+  .h { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #8b98a5; font-weight: 700; margin-bottom: 6px; }
+</style>
+</head>
+<body>
+  <div class="top">
+    <div class="brand">Signal <span>Shelf</span></div>
+    <div class="status"><span class="dot" id="dot"></span><span id="srv">checking…</span></div>
+  </div>
+
+  <div class="card" id="video-card" hidden>
+    <div class="vt" id="v-title"></div>
+    <div class="muted" id="v-meta"></div>
+    <div class="stars" id="stars" hidden></div>
+    <div style="margin-top:8px"><button id="save">Save video + transcript</button></div>
+  </div>
+  <div class="card muted" id="no-video" hidden>Open a YouTube video to save it, or paste a link below.</div>
+
+  <div id="msg"></div>
+
+  <div class="card">
+    <div class="h">Add by link</div>
+    <form class="row" id="linkform">
+      <input type="text" id="link" placeholder="youtube.com/watch?v=… or youtu.be/…" />
+      <button class="sec" type="submit" id="linkbtn">Add</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="toggle">
+      <div>
+        <div style="font-weight:600">Auto-capture</div>
+        <div class="muted">Save videos after <select id="threshold">
+          <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="5">5</option><option value="10">10</option>
+        </select> min of playback</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="auto"><span class="slider"></span></label>
+    </div>
+  </div>
+
+  <div class="foot">
+    <a href="http://localhost:3456" target="_blank" id="dash">Open dashboard →</a>
+    <a href="#" id="open-entry" hidden>Edit in dashboard →</a>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

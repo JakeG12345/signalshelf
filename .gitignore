@@ -1,0 +1,8 @@
+node_modules/
+server/knowledge.db
+server/knowledge.db-wal
+server/knowledge.db-shm
+.DS_Store
+_v1_backup/
+public-shelf/
+*.bundle

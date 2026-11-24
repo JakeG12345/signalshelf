@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Signal Shelf</title>
+<style>
+  :root { --bg:#0f1216; --panel:#171c22; --panel2:#1e252d; --line:#2a333d; --text:#e6ebf0; --muted:#8b98a5; --accent:#00c030; --blue:#40bcf4; --star:#40bcf4; --red:#f05454; --yt:#ff4e45; --pod:#b57bff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  .container { max-width:1180px; margin:0 auto; padding:24px; }
+  header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:6px; }
+  h1 { margin:0; font-size:22px; letter-spacing:-.01em; }
+  h1 span { color:var(--accent); }
+  .stats { color:var(--muted); font-size:13px; margin-bottom:18px; }
+  .stats b { color:var(--text); }
+  input, select, textarea, button { font:inherit; color:var(--text); }
+  input, select, textarea { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:9px 12px; }
+  input:focus, select:focus, textarea:focus { outline:none; border-color:var(--blue); }
+  button { background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:9px 14px; cursor:pointer; font-weight:600; }
+  button:hover { border-color:var(--blue); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#04130a; }
+  button.primary:hover { filter:brightness(1.1); }
+  button.danger { color:var(--red); }
+  button:disabled { opacity:.5; cursor:default; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .addbar { margin-bottom:14px; }
+  .addbar input { flex:1; min-width:260px; }
+  .filters { margin-bottom:18px; }
+  .filters input { flex:1; min-width:220px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(270px,1fr)); gap:14px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; overflow:hidden; cursor:pointer; display:flex; flex-direction:column; transition:border-color .15s, transform .15s; }
+  .card:hover { border-color:var(--blue); transform:translateY(-1px); }
+  .thumb { aspect-ratio:16/9; background:#0b0e11; position:relative; }
+  .thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+  .thumb .ph { width:100%; height:100%; display:grid; place-items:center; font-size:28px; font-weight:700; background:linear-gradient(135deg,#4b2a7a,#1f5f7b); }
+  .badge { position:absolute; left:8px; top:8px; font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; padding:2px 7px; border-radius:4px; background:rgba(0,0,0,.75); }
+  .badge.youtube { color:var(--yt); } .badge.apple_podcasts { color:var(--pod); } .badge.manual { color:var(--muted); }
+  .flag { position:absolute; right:8px; top:8px; font-size:10px; font-weight:700; padding:2px 7px; border-radius:4px; background:rgba(0,0,0,.75); color:#ffc861; }
+  .cbody { padding:12px 14px 14px; display:flex; flex-direction:column; gap:5px; flex:1; }
+  .ctitle { font-weight:650; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .meta { color:var(--muted); font-size:12px; }
+  .stars { color:var(--star); letter-spacing:1px; }
+  .stars .off { color:#3a4652; }
+  .chips { display:flex; flex-wrap:wrap; gap:5px; }
+  .chip { font-size:11px; background:#25303b; color:#bfcbd7; border-radius:4px; padding:2px 7px; }
+  .tk { font-size:12.5px; color:#c4ced8; border-left:2px solid var(--accent); padding-left:8px; margin-top:2px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .snip { font-size:12px; color:var(--muted); font-style:italic; }
+  .snip mark { background:none; color:var(--blue); font-style:normal; font-weight:600; }
+  .empty { color:var(--muted); text-align:center; padding:60px 0; grid-column:1/-1; }
+
+  .modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.72); padding:28px 16px; overflow-y:auto; z-index:10; }
+  .modal.open { display:block; }
+  .mc { background:var(--panel); max-width:860px; margin:0 auto; border-radius:12px; border:1px solid var(--line); padding:22px 24px; }
+  .mhead { display:flex; gap:12px; align-items:flex-start; }
+  .mhead input { flex:1; font-size:18px; font-weight:700; background:transparent; border-color:transparent; padding:4px 6px; margin-left:-6px; }
+  .mhead input:hover { border-color:var(--line); }
+  .x { background:none; border:none; font-size:22px; line-height:1; padding:4px 8px; color:var(--muted); }
+  label.lbl { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:18px 0 6px; font-weight:700; }
+  .rate { display:flex; gap:2px; align-items:center; }
+  .rate button { background:none; border:none; font-size:28px; padding:0 2px; color:#3a4652; line-height:1; }
+  .rate button.on { color:var(--star); }
+  .rate button:hover { transform:scale(1.12); }
+  .rate .hint { color:var(--muted); font-size:12px; margin-left:10px; }
+  .tagpick { display:flex; flex-wrap:wrap; gap:6px; }
+  .tagpick button { font-size:12px; font-weight:500; padding:5px 10px; border-radius:999px; }
+  .tagpick button.on { background:var(--accent); border-color:var(--accent); color:#04130a; font-weight:700; }
+  .tagpick input { padding:5px 10px; border-radius:999px; font-size:12px; width:160px; }
+  textarea { width:100%; resize:vertical; line-height:1.55; }
+  #m-transcript { min-height:220px; font-size:13px; color:#cbd5e0; background:#0f1216; }
+  .mfoot { display:flex; justify-content:space-between; align-items:center; margin-top:20px; gap:10px; flex-wrap:wrap; }
+  .dirty { color:#ffc861; font-size:12px; }
+  details summary { cursor:pointer; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.08em; font-weight:700; margin-top:18px; }
+  a { color:var(--blue); }
+  .warnbox { background:#2b2410; border:1px solid #5a4a12; color:#ffd88a; padding:8px 12px; border-radius:8px; font-size:13px; margin-top:12px; }
+
+  .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(20px); background:#26303b; border:1px solid var(--line); padding:10px 16px; border-radius:8px; opacity:0; transition:all .2s; z-index:20; max-width:90vw; pointer-events:none; }
+  .toast.show { opacity:1; transform:translateX(-50%); }
+  .toast.err { border-color:var(--red); color:#ffb3b3; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .grid2 input, .grid2 select { width:100%; }
+  @media (max-width:640px) { .grid2 { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Signal <span>Shelf</span></h1>
+    <div class="row">
+      <button id="btn-sync">Sync Apple Podcasts</button>
+      <button id="btn-shelf" class="primary">Publish Public Shelf</button>
+    </div>
+  </header>
+  <div class="stats" id="stats">Loading…</div>
+
+  <form class="row addbar" id="addform">
+    <input id="addurl" placeholder="Paste a YouTube link to add it…" autocomplete="off" />
+    <select id="addstatus"><option value="watched">Watched</option><option value="to_watch">To watch</option></select>
+    <button type="submit">Add link</button>
+  </form>
+
+  <div class="row filters">
+    <input id="q" type="search" placeholder="Search transcripts, takeaways, notes, titles…" />
+    <select id="f-source"><option value="">All sources</option><option value="youtube">YouTube</option><option value="apple_podcasts">Podcasts</option></select>
+    <select id="f-rating"><option value="">Any rating</option><option value="5">★★★★★</option><option value="4">★★★★+</option><option value="3">★★★+</option><option value="1">Rated</option></select>
+    <select id="f-model"><option value="">All models</option></select>
+    <select id="f-status"><option value="">Any status</option><option value="watched">Watched</option><option value="to_watch">To watch</option><option value="in_progress">In progress</option></select>
+    <select id="f-sort"><option value="">Newest</option><option value="rating">Top rated</option><option value="oldest">Oldest</option><option value="title">Title</option></select>
+  </div>
+
+  <div class="grid" id="list"></div>
+</div>
+
+<!-- Entry editor -->
+<div id="modal" class="modal" role="dialog" aria-modal="true">
+  <div class="mc">
+    <div class="mhead">
+      <input id="m-title" aria-label="Title" />
+      <button class="x" data-close title="Close (Esc)">×</button>
+    </div>
+    <div class="meta" id="m-meta"></div>
+    <div id="m-warn"></div>
+
+    <div class="grid2">
+      <div>
+        <label class="lbl">Signal rating</label>
+        <div class="rate" id="m-rate"></div>
+      </div>
+      <div>
+        <label class="lbl">Status</label>
+        <select id="m-status"><option value="watched">Watched</option><option value="to_watch">To watch</option><option value="in_progress">In progress</option></select>
+      </div>
+    </div>
+
+    <label class="lbl">Monetization models</label>
+    <div class="tagpick" id="m-tags"></div>
+
+    <label class="lbl">Key takeaways <span style="text-transform:none;letter-spacing:0;font-weight:400">(one per line)</span></label>
+    <textarea id="m-takeaways" rows="5" placeholder="Charge setup fee + monthly retainer&#10;Find clients in niche Facebook groups"></textarea>
+
+    <label class="lbl">Personal notes <span style="text-transform:none;letter-spacing:0;font-weight:400">(private, never published)</span></label>
+    <textarea id="m-notes" rows="4" placeholder="How this applies to me, next actions…"></textarea>
+
+    <details id="m-tdetails">
+      <summary id="m-tsummary">Transcript</summary>
+      <textarea id="m-transcript" rows="12" placeholder="No transcript captured. You can paste one here."></textarea>
+    </details>
+
+    <div class="mfoot">
+      <button class="danger" id="m-delete">Delete</button>
+      <div class="row">
+        <span class="dirty" id="m-dirty"></span>
+        <button data-close>Cancel</button>
+        <button class="primary" id="m-save">Save <span style="opacity:.6;font-weight:400">⌘↵</span></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Shelf publisher -->
+<div id="shelf" class="modal" role="dialog" aria-modal="true">
+  <div class="mc" style="max-width:560px">
+    <div class="mhead"><h2 style="margin:0;flex:1">Publish Public Shelf</h2><button class="x" data-close>×</button></div>
+    <p class="meta">Generates a static, shareable page of your top-rated picks in <code>public-shelf/</code>. Personal notes and transcripts are never included.</p>
+    <label class="lbl">Shelf title</label><input id="s-title" style="width:100%" />
+    <label class="lbl">Tagline</label><input id="s-tagline" style="width:100%" />
+    <div class="grid2">
+      <div><label class="lbl">Curated by</label><input id="s-author" placeholder="Your name (optional)" /></div>
+      <div><label class="lbl">Minimum rating</label>
+        <select id="s-min"><option value="5">★★★★★ only</option><option value="4">★★★★ and up</option><option value="3">★★★ and up</option><option value="2">★★ and up</option><option value="1">Any rated</option></select></div>
+    </div>
+    <label class="lbl">Include</label>
+    <div class="row">
+      <label><input type="checkbox" id="s-tk" /> Key takeaways</label>
+      <label><input type="checkbox" id="s-yt" /> YouTube</label>
+      <label><input type="checkbox" id="s-pod" /> Podcasts</label>
+    </div>
+    <div id="s-result" class="meta" style="margin-top:14px"></div>
+    <div class="mfoot"><span></span><div class="row"><button data-close>Close</button><button class="primary" id="s-publish">Publish</button></div></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+const safeUrl = u => /^https?:\/\//i.test(String(u || '')) ? String(u) : '';
+let META = { monetizationModels: [], stats: {} };
+let current = null;      // entry being edited
+let draft = null;        // { rating, models:Set }
+let dirty = false;
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) } });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  return data;
+}
+
+let toastTimer;
+function toast(msg, isErr = false) {
+  const t = $('#toast');
+  t.textContent = msg; t.className = 'toast show' + (isErr ? ' err' : '');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = 'toast', isErr ? 6000 : 2800);
+}
+
+const starStr = n => n ? '★'.repeat(n) + `<span class="off">${'★'.repeat(5 - n)}</span>` : '';
+const fmtDate = d => d ? new Date(d.replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(d) ? '' : 'Z')).toLocaleDateString(undefined, { day:'numeric', month:'short', year:'numeric' }) : '';
+const fmtDur = s => !s ? '' : s >= 3600 ? `${Math.floor(s/3600)}h ${Math.round(s%3600/60)}m` : `${Math.round(s/60)}m`;
+
+async function loadMeta() {
+  META = await api('/api/meta');
+  const s = META.stats;
+  $('#stats').innerHTML = `<b>${s.total || 0}</b> items · <b>${s.youtube || 0}</b> videos · <b>${s.podcasts || 0}</b> podcast episodes · <b>${s.rated || 0}</b> rated` +
+    (s.avg_rating ? ` · avg <b>${s.avg_rating}★</b>` : '') + (s.missing_transcripts ? ` · <b>${s.missing_transcripts}</b> missing transcripts` : '');
+  const used = (s.models || []).map(m => m.model);
+  const all = [...new Set([...META.monetizationModels, ...used])];
+  const sel = $('#f-model'), prev = sel.value;
+  sel.innerHTML = '<option value="">All models</option>' + all.map(m => {
+    const c = (s.models || []).find(x => x.model.toLowerCase() === m.toLowerCase());
+    return `<option value="${esc(m)}">${esc(m)}${c ? ` (${c.count})` : ''}</option>`;
+  }).join('');
+  sel.value = prev;
+}
+
+let loadSeq = 0;
+async function loadEntries() {
+  const seq = ++loadSeq;
+  const p = new URLSearchParams();
+  const map = { q: '#q', source: '#f-source', minRating: '#f-rating', model: '#f-model', status: '#f-status', sort: '#f-sort' };
+  for (const [k, sel] of Object.entries(map)) { const v = $(sel).value.trim(); if (v) p.set(k, v); }
+  let items;
+  try { items = await api('/api/entries?' + p); }
+  catch (e) { $('#list').innerHTML = `<div class="empty">Could not load entries: ${esc(e.message)}</div>`; return; }
+  if (seq !== loadSeq) return; // a newer search already started
+  $('#list').innerHTML = items.length ? items.map(card).join('') :
+    `<div class="empty">${p.toString() ? 'Nothing matches these filters.' : 'No items yet. Paste a YouTube link above, save one from the Chrome extension, or sync Apple Podcasts.'}</div>`;
+}
+
+function card(it) {
+  const thumb = safeUrl(it.thumbnail);
+  const initials = esc((it.creator || it.title || '?').split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase());
+  const flag = it.status === 'to_watch' ? 'TO WATCH' : it.transcript_status === 'missing' ? 'NO TRANSCRIPT' : '';
+  const snippet = it.match_snippet ? `<div class="snip">${esc(it.match_snippet).replace(/\[/g, '<mark>').replace(/\]/g, '</mark>')}</div>` : '';
+  return `<div class="card" data-id="${esc(it.id)}" tabindex="0">
+    <div class="thumb">${thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<div class="ph">${initials}</div>`}
+      <span class="badge ${esc(it.source)}">${it.source === 'youtube' ? 'YouTube' : it.source === 'apple_podcasts' ? 'Podcast' : 'Manual'}</span>
+      ${flag ? `<span class="flag">${flag}</span>` : ''}</div>
+    <div class="cbody">
+      <div class="ctitle">${esc(it.title)}</div>
+      <div class="meta">${[esc(it.creator), fmtDate(it.watched_at), fmtDur(it.duration_sec)].filter(Boolean).join(' · ')}</div>
+      ${it.signal_rating ? `<div class="stars">${starStr(it.signal_rating)}</div>` : ''}
+      ${it.monetization_models.length ? `<div class="chips">${it.monetization_models.map(m => `<span class="chip">${esc(m)}</span>`).join('')}</div>` : ''}
+      ${it.key_takeaways.length ? `<div class="tk">${esc(it.key_takeaways[0])}${it.key_takeaways.length > 1 ? ` <span class="meta">+${it.key_takeaways.length - 1}</span>` : ''}</div>` : ''}
+      ${snippet}
+    </div></div>`;
+}
+
+// ---------- Editor ----------
+function renderRate() {
+  const labels = ['', 'Noise', 'Meh', 'Useful', 'High signal', 'Must watch'];
+  $('#m-rate').innerHTML = [1,2,3,4,5].map(n => `<button type="button" data-star="${n}" class="${draft.rating >= n ? 'on' : ''}" title="${labels[n]}">★</button>`).join('') +
+    `<span class="hint">${draft.rating ? labels[draft.rating] : 'Not rated · press 1–5'}</span>`;
+}
+function renderTags() {
+  const presets = META.monetizationModels;
+  const extras = [...draft.models].filter(m => !presets.some(p => p.toLowerCase() === m.toLowerCase()));
+  $('#m-tags').innerHTML = [...presets, ...extras].map(m =>
+    `<button type="button" data-tag="${esc(m)}" class="${[...draft.models].some(x => x.toLowerCase() === m.toLowerCase()) ? 'on' : ''}">${esc(m)}</button>`).join('') +
+    `<input id="m-newtag" placeholder="+ custom tag, Enter" maxlength="40" />`;
+}
+function setDirty(v = true) { dirty = v; $('#m-dirty').textContent = v ? 'Unsaved changes' : ''; }
+
+async function openItem(id) {
+  let e;
+  try { e = await api('/api/entries/' + encodeURIComponent(id)); } catch (err) { return toast(err.message, true); }
+  current = e;
+  draft = { rating: e.signal_rating || 0, models: new Set(e.monetization_models) };
+  $('#m-title').value = e.title;
+  const url = safeUrl(e.url);
+  $('#m-meta').innerHTML = [esc(e.creator), e.source === 'youtube' ? 'YouTube' : 'Podcast', fmtDur(e.duration_sec),
+    `saved ${fmtDate(e.watched_at)}`, url ? `<a href="${esc(url)}" target="_blank" rel="noopener">Open ↗</a>` : ''].filter(Boolean).join(' · ');
+  $('#m-warn').innerHTML = e.transcript_status === 'missing'
+    ? `<div class="warnbox">No transcript yet. ${e.source === 'youtube' ? 'Open the video in Chrome and press <b>Save</b> in the extension (it reads YouTube\'s transcript panel), or paste one below.' : 'Paste one below if you have it.'}</div>`
+    : e.transcript_status === 'description' ? '<div class="meta" style="margin-top:6px">Podcast: the "transcript" is the episode description.</div>' : '';
+  $('#m-status').value = e.status || 'watched';
+  $('#m-takeaways').value = (e.key_takeaways || []).join('\n');
+  $('#m-notes').value = e.personal_notes || '';
+  $('#m-transcript').value = e.transcript || '';
+  $('#m-tsummary').textContent = `Transcript (${(e.transcript || '').length.toLocaleString()} chars)`;
+  $('#m-tdetails').open = false;
+  renderRate(); renderTags(); setDirty(false);
+  $('#modal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal(el, force = false) {
+  if (el.id === 'modal' && dirty && !force && !confirm('Discard unsaved changes?')) return;
+  el.classList.remove('open');
+  if (!document.querySelector('.modal.open')) document.body.style.overflow = '';
+  if (el.id === 'modal') { current = null; setDirty(false); }
+}
+
+async function saveItem() {
+  if (!current) return;
+  const patch = {
+    title: $('#m-title').value,
+    signal_rating: draft.rating || null,
+    monetization_models: [...draft.models],
+    key_takeaways: $('#m-takeaways').value,
+    personal_notes: $('#m-notes').value,
+    status: $('#m-status').value
+  };
+  if ($('#m-transcript').value !== (current.transcript || '')) patch.transcript = $('#m-transcript').value;
+  $('#m-save').disabled = true;
+  try {
+    await api('/api/entries/' + encodeURIComponent(current.id), { method: 'PATCH', body: JSON.stringify(patch) });
+    setDirty(false); closeModal($('#modal'), true); toast('Saved');
+    loadMeta(); loadEntries();
+  } catch (e) { toast(e.message, true); }
+  finally { $('#m-save').disabled = false; }
+}
+
+async function deleteItem() {
+  if (!current || !confirm(`Delete "${current.title}"? This cannot be undone.`)) return;
+  try {
+    await api('/api/entries/' + encodeURIComponent(current.id), { method: 'DELETE' });
+    closeModal($('#modal'), true); toast('Deleted'); loadMeta(); loadEntries();
+  } catch (e) { toast(e.message, true); }
+}
+
+// ---------- Shelf ----------
+async function openShelf() {
+  const s = await api('/api/shelf/settings');
+  $('#s-title').value = s.title; $('#s-tagline').value = s.tagline; $('#s-author').value = s.author;
+  $('#s-min').value = String(s.minRating); $('#s-tk').checked = s.includeTakeaways;
+  $('#s-yt').checked = s.includeYoutube; $('#s-pod').checked = s.includePodcasts;
+  $('#s-result').textContent = '';
+  $('#shelf').classList.add('open'); document.body.style.overflow = 'hidden';
+}
+async function publish() {
+  $('#s-publish').disabled = true;
+  try {
+    const r = await api('/api/shelf/publish', { method: 'POST', body: JSON.stringify({
+      title: $('#s-title').value, tagline: $('#s-tagline').value, author: $('#s-author').value,
+      minRating: Number($('#s-min').value), includeTakeaways: $('#s-tk').checked,
+      includeYoutube: $('#s-yt').checked, includePodcasts: $('#s-pod').checked }) });
+    $('#s-result').innerHTML = `Published <b>${r.count}</b> item${r.count === 1 ? '' : 's'} to <code>${esc(r.dir)}</code><br>` +
+      `<a href="/shelf/" target="_blank">Preview shelf ↗</a> · <a href="/shelf/shelf.json" target="_blank">shelf.json ↗</a><br>` +
+      `<span>To share: drag the <code>public-shelf</code> folder onto app.netlify.com/drop, or push it to GitHub Pages.</span>` +
+      (r.count === 0 ? '<br><b style="color:#ffc861">Nothing qualifies yet. Rate some items first.</b>' : '');
+  } catch (e) { toast(e.message, true); }
+  finally { $('#s-publish').disabled = false; }
+}
+
+// ---------- Wiring ----------
+let qTimer;
+$('#q').addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeout(loadEntries, 180); });
+['#f-source', '#f-rating', '#f-model', '#f-status', '#f-sort'].forEach(s => $(s).addEventListener('change', loadEntries));
+
+$('#list').addEventListener('click', e => { const c = e.target.closest('.card'); if (c) openItem(c.dataset.id); });
+$('#list').addEventListener('keydown', e => { if (e.key === 'Enter') { const c = e.target.closest('.card'); if (c) openItem(c.dataset.id); } });
+
+$('#m-rate').addEventListener('click', e => {
+  const b = e.target.closest('[data-star]'); if (!b) return;
+  const n = Number(b.dataset.star); draft.rating = draft.rating === n ? 0 : n; renderRate(); setDirty();
+});
+$('#m-tags').addEventListener('click', e => {
+  const b = e.target.closest('[data-tag]'); if (!b) return;
+  const t = b.dataset.tag, existing = [...draft.models].find(x => x.toLowerCase() === t.toLowerCase());
+  existing ? draft.models.delete(existing) : draft.models.add(t); renderTags(); setDirty();
+});
+$('#m-tags').addEventListener('keydown', e => {
+  if (e.target.id !== 'm-newtag' || e.key !== 'Enter') return;
+  e.preventDefault();
+  const v = e.target.value.replace(/\s+/g, ' ').trim();
+  if (v && ![...draft.models].some(x => x.toLowerCase() === v.toLowerCase())) { draft.models.add(v); renderTags(); setDirty(); }
+  $('#m-newtag').focus();
+});
+['#m-title', '#m-takeaways', '#m-notes', '#m-transcript'].forEach(s => $(s).addEventListener('input', () => setDirty()));
+$('#m-status').addEventListener('change', () => setDirty());
+$('#m-save').addEventListener('click', saveItem);
+$('#m-delete').addEventListener('click', deleteItem);
+
+document.querySelectorAll('.modal').forEach(m => {
+  m.addEventListener('click', e => { if (e.target === m || e.target.closest('[data-close]')) closeModal(m); });
+});
+document.addEventListener('keydown', e => {
+  const open = document.querySelector('.modal.open');
+  if (!open) return;
+  if (e.key === 'Escape') return closeModal(open);
+  if (open.id !== 'modal') return;
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); return saveItem(); }
+  const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+  if (!typing && /^[0-5]$/.test(e.key)) { draft.rating = Number(e.key); renderRate(); setDirty(); }
+});
+window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+$('#addform').addEventListener('submit', async e => {
+  e.preventDefault();
+  const url = $('#addurl').value.trim(); if (!url) return;
+  const btn = e.submitter || $('#addform button'); btn.disabled = true; btn.textContent = 'Adding…';
+  try {
+    const r = await api('/api/ingest-url', { method: 'POST', body: JSON.stringify({ url, status: $('#addstatus').value }) });
+    $('#addurl').value = '';
+    toast(`Added "${r.entry.title}"` + (r.entry.transcript_chars ? ` · ${r.entry.transcript_chars.toLocaleString()} chars` : ' · no transcript yet'));
+    await Promise.all([loadMeta(), loadEntries()]);
+    openItem(r.entry.id);
+  } catch (err) { toast(err.message, true); }
+  finally { btn.disabled = false; btn.textContent = 'Add link'; }
+});
+
+$('#btn-sync').addEventListener('click', async e => {
+  const b = e.currentTarget; b.disabled = true; b.textContent = 'Syncing…';
+  try {
+    const r = await api('/api/sync/podcasts', { method: 'POST' });
+    r.error ? toast(r.error, true) : toast(`Synced ${r.synced} episode${r.synced === 1 ? '' : 's'}`);
+    loadMeta(); loadEntries();
+  } catch (err) { toast(err.message, true); }
+  finally { b.disabled = false; b.textContent = 'Sync Apple Podcasts'; }
+});
+$('#btn-shelf').addEventListener('click', () => openShelf().catch(e => toast(e.message, true)));
+$('#s-publish').addEventListener('click', publish);
+
+// Deep link: /#open=yt_xxx (used by the Chrome extension)
+function handleHash() {
+  const m = location.hash.match(/^#open=(.+)$/);
+  if (m) { openItem(decodeURIComponent(m[1])); history.replaceState(null, '', location.pathname); }
+}
+window.addEventListener('hashchange', handleHash);
+
+loadMeta().then(loadEntries).then(handleHash).catch(e => toast('Server unreachable: ' + e.message, true));
+</script>
+</body>
+</html>
