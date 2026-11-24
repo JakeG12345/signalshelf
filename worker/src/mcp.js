@@ -101,7 +101,7 @@ const int = (v, d, min, max) => {
 const text = data => ({ content: [{ type: 'text', text: typeof data === 'string' ? data : JSON.stringify(data, null, 2) }] });
 const toolError = msg => ({ content: [{ type: 'text', text: msg }], isError: true });
 
-async function callTool(name, a = {}, { store, origin }) {
+async function callTool(name, a = {}, { store, origin, user, guardCapture }) {
   switch (name) {
     case 'list_watched_media':
       return text((await store.query({
@@ -114,8 +114,9 @@ async function callTool(name, a = {}, { store, origin }) {
       return text(rows.length ? rows.map(compact) : `No matches for "${a.query}".`);
     }
     case 'get_full_transcript': {
-      const e = await store.get(String(a.id || ''));
-      if (!e) return toolError(`No entry found with id: ${a.id}. Use search_transcripts or list_watched_media to find ids.`);
+      const found = await store.get(String(a.id || ''));
+      if (!found) return toolError(`No entry found with id: ${a.id}. Use search_transcripts or list_watched_media to find ids.`);
+      const { user_id, ...e } = found;
       const max = int(a.max_chars, MAX_TEXT, 1000, 500000);
       const t = e.transcript || '';
       return text({ ...e, transcript: t.length > max ? t.slice(0, max) + `\n\n[truncated: ${t.length - max} more chars]` : t, transcript_chars: t.length });
@@ -136,6 +137,7 @@ async function callTool(name, a = {}, { store, origin }) {
       return text(compact(await store.update(String(id || ''), patch)));
     }
     case 'save_link': {
+      if (guardCapture) await guardCapture();
       const { warnings, ...data } = await captureLink(a.url);
       await store.upsert(data);
       const e = await store.update(data.id, { status: a.status === 'to_watch' ? 'to_watch' : 'watched' });
@@ -143,7 +145,8 @@ async function callTool(name, a = {}, { store, origin }) {
     }
     case 'get_public_shelf': {
       const s = normalizeShelfSettings(await store.getSetting('shelf', {}) || {});
-      return text({ url: `${origin}/`, published: s.published, min_rating: s.minRating, title: s.title });
+      if (!user?.handle) return text({ published: false, note: 'No username yet. In the Signal Shelf app, open Public Shelf, pick a username and publish.' });
+      return text({ url: `${origin}/u/${user.handle}`, published: s.published, min_rating: s.minRating });
     }
     default:
       return null;

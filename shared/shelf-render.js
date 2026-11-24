@@ -72,7 +72,7 @@ export function shelfDataFromEntries(entries, settings) {
   };
 }
 
-export function renderShelfHtml(data, { jsonHref = 'shelf.json' } = {}) {
+export function renderShelfHtml(data, { jsonHref = 'shelf.json', ctaUrl = '', canonicalUrl = '' } = {}) {
   const avg = data.items.length ? (data.items.reduce((a, b) => a + b.rating, 0) / data.items.length).toFixed(1) : '–';
   const cards = data.items.map(it => {
     const initials = esc((it.creator || it.title).split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase());
@@ -109,6 +109,11 @@ export function renderShelfHtml(data, { jsonHref = 'shelf.json' } = {}) {
 <meta name="description" content="${esc(data.tagline)}">
 <meta property="og:title" content="${esc(data.title)}">
 <meta property="og:description" content="${esc(data.tagline)}">
+<meta property="og:type" content="website">
+${canonicalUrl ? `<meta property="og:url" content="${esc(canonicalUrl)}"><link rel="canonical" href="${esc(canonicalUrl)}">` : ''}
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="${esc(data.title)}">
+<meta name="twitter:description" content="${esc(data.tagline)}">
 <style>
   :root { --bg:#14181c; --panel:#1c2228; --line:#2c3440; --text:#e6ebf0; --muted:#8b98a5; --accent:#00c030; --star:#40bcf4; }
   * { box-sizing:border-box; }
@@ -144,6 +149,7 @@ export function renderShelfHtml(data, { jsonHref = 'shelf.json' } = {}) {
   summary { cursor:pointer; color:var(--accent); font-size:13px; }
   details ul { margin:8px 0 0; padding-left:18px; color:#cdd6df; }
   details li { margin-bottom:4px; }
+  .cta { display:inline-block; margin-top:14px; background:var(--accent); color:#04130a; font-weight:700; text-decoration:none; padding:8px 14px; border-radius:8px; font-size:14px; }
   footer { margin-top:48px; color:var(--muted); font-size:12px; text-align:center; }
   .empty { color:var(--muted); padding:40px 0; }
 </style>
@@ -153,6 +159,7 @@ export function renderShelfHtml(data, { jsonHref = 'shelf.json' } = {}) {
   <header>
     <h1>${esc(data.title)}</h1>
     <p>${esc(data.tagline)}</p>
+    ${ctaUrl ? `<a class="cta" href="${esc(ctaUrl)}">Make your own Signal Shelf →</a>` : ''}
   </header>
   <section class="stats">
     <div><b>${data.count}</b>Picks</div>

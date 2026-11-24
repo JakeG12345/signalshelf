@@ -59,6 +59,30 @@ export const REINDEX_SQL = [
    FROM entries e WHERE e.id = ?`
 ];
 
+/** Reindex statements for one entry; pass userId for the multi-user cloud schema. */
+export function reindexStatements(id, userId) {
+  if (userId === undefined) return REINDEX_SQL.map(sql => ({ sql, params: [id] }));
+  return [
+    { sql: 'DELETE FROM entries_fts WHERE id = ? AND user_id = ?', params: [id, userId] },
+    {
+      sql: `INSERT INTO entries_fts (id, user_id, title, creator, transcript, notes, takeaways, models)
+        SELECT e.id, e.user_id, e.title, COALESCE(e.creator, ''), COALESCE(e.transcript, ''), COALESCE(e.personal_notes, ''),
+          COALESCE((SELECT group_concat(value, char(10)) FROM json_each(e.key_takeaways)), ''),
+          COALESCE((SELECT group_concat(value, ', ') FROM json_each(e.monetization_models)), '')
+        FROM entries e WHERE e.id = ? AND e.user_id = ?`,
+      params: [id, userId]
+    }
+  ];
+}
+
+export function statsStatements(userId) {
+  if (userId === undefined) return [{ sql: STATS_SQL, params: [] }, { sql: MODELS_SQL, params: [] }];
+  return [
+    { sql: STATS_SQL.replace(/FROM entries$/, 'FROM entries WHERE user_id = ?'), params: [userId] },
+    { sql: MODELS_SQL.replace('FROM entries e, json_each(e.monetization_models)', 'FROM entries e, json_each(e.monetization_models) WHERE e.user_id = ?'), params: [userId] }
+  ];
+}
+
 export const STATS_SQL = `SELECT COUNT(*) AS total,
     COALESCE(SUM(source = 'youtube'), 0) AS youtube, COALESCE(SUM(source = 'apple_podcasts'), 0) AS podcasts,
     COALESCE(SUM(source NOT IN ('youtube', 'apple_podcasts')), 0) AS links,
@@ -137,20 +161,25 @@ const LIST_COLS = `e.id, e.source, e.title, e.creator, e.url, e.thumbnail, e.pub
 /** Returns null when the query has text but no searchable words (caller should return []). */
 export function buildEntriesQuery({
   q = '', source = null, minRating = null, model = null, status = null,
-  sort = null, limit = 50, offset = 0
+  sort = null, limit = 50, offset = 0, userId
 } = {}) {
   const where = [];
   const params = [];
   const fts = toFtsQuery(q);
   if (String(q ?? '').trim() && !fts) return null;
+  const scoped = userId !== undefined;
   let from = 'entries e';
   let select = LIST_COLS;
   if (fts) {
-    from = 'entries_fts JOIN entries e ON e.id = entries_fts.id';
-    select += `, snippet(entries_fts, 3, '[', ']', '…', 24) AS match_snippet`;
+    from = scoped
+      ? 'entries_fts JOIN entries e ON e.id = entries_fts.id AND e.user_id = entries_fts.user_id'
+      : 'entries_fts JOIN entries e ON e.id = entries_fts.id';
+    // snippet column index: transcript is column 3 locally, 4 in the cloud (user_id is column 1)
+    select += `, snippet(entries_fts, ${scoped ? 4 : 3}, '[', ']', '…', 24) AS match_snippet`;
     where.push('entries_fts MATCH ?');
     params.push(fts);
   }
+  if (scoped) { where.push('e.user_id = ?'); params.push(userId); }
   if (source) { where.push('e.source = ?'); params.push(String(source)); }
   if (minRating) { where.push('e.signal_rating >= ?'); params.push(Number(minRating)); }
   if (status) { where.push('e.status = ?'); params.push(String(status)); }
@@ -183,7 +212,7 @@ export function buildUpsert({
   id, source = 'youtube', title, creator = '', url = '', published_at = null, watched_at = null,
   duration_sec = null, thumbnail = null, transcript = '', transcript_status = null, tags = null,
   status = 'watched', bumpWatched = true
-}, now = new Date().toISOString()) {
+}, now = new Date().toISOString(), userId) {
   validateCapture({ id, title, source });
   const tr = String(transcript ?? '').slice(0, 1_500_000); // stays under D1's 2 MB row limit
   const tStatus = transcript_status || (tr.length ? 'ok' : 'missing');
@@ -191,11 +220,12 @@ export function buildUpsert({
     ? null : Math.round(Number(duration_sec));
   const tagsJson = JSON.stringify(normalizeTags(tags || []));
   const initialStatus = STATUSES.includes(status) ? status : 'watched';
+  const scoped = userId !== undefined;
   return expandNumbered({
-    sql: `INSERT INTO entries (id, source, title, creator, url, published_at, watched_at, duration_sec, thumbnail,
+    sql: `INSERT INTO entries (id, ${scoped ? 'user_id, ' : ''}source, title, creator, url, published_at, watched_at, duration_sec, thumbnail,
         tags, transcript, transcript_status, monetization_models, key_takeaways, personal_notes, status, created_at, updated_at)
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, COALESCE(?7, ?14), ?8, ?9, ?10, ?11, ?12, '[]', '[]', '', ?13, ?14, ?14)
-      ON CONFLICT(id) DO UPDATE SET
+      VALUES (?1, ${scoped ? '?17, ' : ''}?2, ?3, ?4, ?5, ?6, COALESCE(?7, ?14), ?8, ?9, ?10, ?11, ?12, '[]', '[]', '', ?13, ?14, ?14)
+      ON CONFLICT(${scoped ? 'user_id, id' : 'id'}) DO UPDATE SET
         title = excluded.title,
         creator = COALESCE(NULLIF(excluded.creator, ''), entries.creator),
         url = COALESCE(NULLIF(excluded.url, ''), entries.url),
@@ -210,7 +240,8 @@ export function buildUpsert({
         updated_at = ?14`,
     params: [
       id, source, String(title).trim().slice(0, 500), creator || '', url || '', published_at || null, watched_at || null,
-      dur, thumbnail || null, tagsJson, tr, tStatus, initialStatus, now, tags ? 1 : 0, bumpWatched ? 1 : 0
+      dur, thumbnail || null, tagsJson, tr, tStatus, initialStatus, now, tags ? 1 : 0, bumpWatched ? 1 : 0,
+      scoped ? userId : null
     ]
   });
 }

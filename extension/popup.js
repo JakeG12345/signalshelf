@@ -67,9 +67,9 @@ async function init() {
     appUrl = h.data.base + (h.data.dashboard || '/');
     $('#dash').href = appUrl;
   }
-  $('#srv').textContent = !h.ok ? 'offline' : !ready ? 'token needed' : `${h.data.mode || 'local'} · ${h.data.entries} items`;
+  $('#srv').textContent = !h.ok ? 'offline' : !ready ? 'key needed' : `${h.data.mode || 'local'} · ${h.data.entries} items`;
   if (!ready) {
-    setMsg(h.ok ? 'Enter your access token in Server settings.' : h.error, 'err');
+    setMsg(h.ok ? 'Paste your key from the app\'s Account panel into Server settings.' : h.error, 'err');
     $('#save').disabled = true;
     $('#srv-settings').open = true;
     return;
@@ -126,7 +126,9 @@ $('#threshold').addEventListener('change', e => chrome.storage.sync.set({ thresh
 $('#api-save').addEventListener('click', async () => {
   let base = $('#api-base').value.trim().replace(/\/+$/, '').replace(/\/app$/, '');
   if (base && !/^https?:\/\//.test(base)) base = 'https://' + base;
-  await chrome.storage.sync.set({ apiBase: base || 'http://127.0.0.1:3456', apiToken: $('#api-token').value.trim() });
+  const rawKey = $('#api-token').value.trim();
+  const key = (rawKey.match(/ss_[A-Za-z0-9]{24,64}/) || [rawKey])[0]; // accepts a pasted private link too
+  await chrome.storage.sync.set({ apiBase: base || 'http://127.0.0.1:3456', apiToken: key });
   location.reload();
 });
 

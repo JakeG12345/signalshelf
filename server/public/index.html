@@ -131,7 +131,7 @@
     <h1>Signal <span>Shelf</span></h1>
     <div class="row">
       <button id="btn-sync" hidden>Sync Apple Podcasts</button>
-      <button id="btn-connect" hidden>Connect</button>
+      <button id="btn-connect" hidden>Account</button>
       <button id="btn-shelf" class="primary">Public Shelf</button>
     </div>
   </header>
@@ -206,9 +206,13 @@
 <!-- Shelf publisher -->
 <div id="shelf" class="modal" role="dialog" aria-modal="true">
   <div class="mc" style="max-width:560px">
-    <div class="mhead"><h2 style="margin:0;flex:1">Publish Public Shelf</h2><button class="x" data-close>×</button></div>
+    <div class="mhead"><h2 style="margin:0;flex:1">Public Shelf</h2><button class="x" data-close>×</button></div>
     <p class="meta" id="s-intro">Generates a static, shareable page of your top-rated picks in <code>public-shelf/</code>. Personal notes and transcripts are never included.</p>
-    <label class="lbl">Shelf title</label><input id="s-title" style="width:100%" />
+    <div id="s-handle-row" hidden>
+      <label class="lbl">Username (your shelf link)</label>
+      <div class="row"><span class="meta" id="s-handle-prefix"></span><input id="s-handle" placeholder="yourname" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="21" style="flex:1;min-width:140px" /></div>
+    </div>
+    <label class="lbl">Shelf title</label><input id="s-title" style="width:100%" placeholder="Leave blank for “@you’s Signal Shelf”" />
     <label class="lbl">Tagline</label><input id="s-tagline" style="width:100%" />
     <div class="grid2">
       <div><label class="lbl">Curated by</label><input id="s-author" placeholder="Your name (optional)" /></div>
@@ -226,45 +230,42 @@
   </div>
 </div>
 
-<!-- Login (cloud) -->
-<div class="login" id="login">
-  <form id="loginform">
-    <h1>Signal <span>Shelf</span></h1>
-    <p class="meta">Enter your access token (the APP_TOKEN you set when deploying).</p>
-    <input id="logintoken" type="password" autocomplete="current-password" placeholder="Access token" />
-    <button class="primary" type="submit">Unlock</button>
-    <p class="meta" id="loginerr" style="color:#ff9b9b"></p>
-  </form>
-</div>
-
-<!-- Connect (cloud): iPhone shortcut, Claude, extension -->
+<!-- Account (cloud): sync link, iPhone shortcut, Claude, extension -->
 <div id="connect" class="modal" role="dialog" aria-modal="true">
   <div class="mc connect" style="max-width:620px">
-    <div class="mhead"><h2 style="margin:0;flex:1">Connect</h2><button class="x" data-close>×</button></div>
+    <div class="mhead"><h2 style="margin:0;flex:1">Account</h2><button class="x" data-close>×</button></div>
+    <p class="meta" id="a-who"></p>
 
-    <label class="lbl">1 · Add to iPhone home screen</label>
+    <label class="lbl">Your private link · save this</label>
+    <p>Your shelf has no password: this link <i>is</i> your login. Open it on your other devices (and once in Safari if you use the home-screen app) to use the same shelf. Don't share it.</p>
+    <code id="c-sync"></code><button class="copy" data-copy="c-sync">Copy</button>
+
+    <label class="lbl">iPhone · add to home screen</label>
     <p>In Safari tap <b>Share → Add to Home Screen</b>. It opens like an app.</p>
 
-    <label class="lbl">2 · Share from YouTube / Podcasts to Signal Shelf</label>
+    <label class="lbl">iPhone · share from YouTube / Podcasts</label>
     <ol>
       <li>Open <b>Shortcuts</b> → <b>+</b> → name it <b>Save to Signal Shelf</b>.</li>
-      <li>Tap the <b>ⓘ</b> → turn on <b>Show in Share Sheet</b> (receives URLs and Text).</li>
+      <li>Tap <b>ⓘ</b> → turn on <b>Show in Share Sheet</b>.</li>
       <li>Add action <b>URL Encode</b> (input: Shortcut Input).</li>
-      <li>Add action <b>Open URLs</b> with this, then the <i>URL Encoded Text</i> variable right after it:
+      <li>Add action <b>Open URLs</b>: paste this, then add the <i>URL Encoded Text</i> variable right after it:
         <code id="c-shortcut"></code><button class="copy" data-copy="c-shortcut">Copy</button></li>
     </ol>
-    <p class="meta">Now in YouTube or Podcasts: Share → Save to Signal Shelf. Safari opens with it added, ready to rate. The first time, unlock once in Safari too (home-screen apps keep a separate login).</p>
+    <p class="meta">Then in YouTube or Podcasts: Share → Save to Signal Shelf. It opens with the item added, ready to rate.</p>
 
-    <label class="lbl">3 · Use it in Claude (iPhone, web, desktop)</label>
+    <label class="lbl">Claude (iPhone, web, desktop)</label>
     <p>On claude.ai: <b>Settings → Connectors → Add custom connector</b>, name <b>Signal Shelf</b>, URL:</p>
     <code id="c-mcp"></code><button class="copy" data-copy="c-mcp">Copy</button>
-    <p class="meta">Keep this URL private: it contains your token.</p>
+    <p class="meta">Then ask Claude things like “what are my top-rated AI agency videos?”</p>
 
-    <label class="lbl">4 · Chrome extension (desktop, optional)</label>
-    <p>In the extension's <b>Server</b> settings use URL <code id="c-origin"></code> and your access token.</p>
+    <label class="lbl">Chrome extension (desktop)</label>
+    <p>In the extension's <b>Server settings</b> use URL <code id="c-origin"></code> and key <code id="c-key"></code><button class="copy" data-copy="c-key">Copy key</button></p>
 
-    <label class="lbl">Backup</label>
-    <p><a href="#" id="c-export">Download all data (JSON)</a> · <a href="#" id="c-logout">Log out on this device</a></p>
+    <label class="lbl">Use a different shelf on this device</label>
+    <form class="row" id="switchform"><input id="switchkey" placeholder="Paste a private link or key" autocapitalize="none" autocorrect="off" style="flex:1;min-width:0" /><button type="submit">Switch</button></form>
+
+    <label class="lbl">Your data</label>
+    <p><a href="#" id="c-export">Download all data (JSON)</a> · <a href="#" id="c-delete" style="color:var(--red)">Delete my shelf</a></p>
   </div>
 </div>
 
@@ -287,15 +288,31 @@ async function api(path, opts = {}) {
   const token = getToken();
   const res = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts.headers || {}) } });
   const data = await res.json().catch(() => ({}));
-  if (res.status === 401) { showLogin(getToken() ? 'That token was not accepted.' : ''); throw new Error('Locked'); }
+  if (res.status === 401 && !opts._retried) {
+    // Unknown/deleted key: start a fresh anonymous shelf rather than showing a login wall
+    setToken(''); await ensureAccount();
+    return api(path, { ...opts, _retried: true });
+  }
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   return data;
 }
 
-function showLogin(msg = '') {
-  $('#loginerr').textContent = msg;
-  $('#login').classList.add('open');
-  setTimeout(() => $('#logintoken').focus(), 50);
+// Anonymous-first: the first visit to the cloud app creates a private shelf automatically.
+async function ensureAccount() {
+  if (getToken()) return;
+  const health = await fetch('/api/health').then(r => r.json()).catch(() => ({}));
+  if (!health.accounts) return; // local Mac server: no accounts
+  const res = await fetch('/api/auth/anon', { method: 'POST' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Could not create your shelf');
+  setToken(data.key);
+  WELCOME = true;
+}
+let WELCOME = false;
+
+function keyFromInput(text) {
+  const m = String(text || '').match(/ss_[A-Za-z0-9]{24,64}/);
+  return m ? m[0] : '';
 }
 
 let toastTimer;
@@ -341,7 +358,7 @@ async function loadEntries() {
   catch (e) { $('#list').innerHTML = `<div class="empty">Could not load entries: ${esc(e.message)}</div>`; return; }
   if (seq !== loadSeq) return; // a newer search already started
   $('#list').innerHTML = items.length ? items.map(card).join('') :
-    `<div class="empty">${p.toString() ? 'Nothing matches these filters.' : 'No items yet. Paste a YouTube link above, save one from the Chrome extension, or sync Apple Podcasts.'}</div>`;
+    `<div class="empty">${p.toString() ? 'Nothing matches these filters.' : (META.mode === 'cloud' ? 'No items yet. Paste a YouTube, podcast or any link above, or share one from your iPhone (Account → Shortcut).' : 'No items yet. Paste a YouTube link above, save one from the Chrome extension, or sync Apple Podcasts.')}</div>`;
 }
 
 function card(it) {
@@ -444,7 +461,15 @@ async function openShelf() {
   $('#s-yt').checked = s.includeYoutube; $('#s-pod').checked = s.includePodcasts;
   $('#s-result').textContent = '';
   if (META.mode === 'cloud') {
-    $('#s-intro').innerHTML = `Your shelf is a live public page at <a href="${esc(META.shelfUrl)}" target="_blank">${esc(META.shelfUrl.replace(/^https?:\/\//, ''))}</a>. It updates automatically as you rate. ${s.published ? '<b style="color:var(--accent)">Published.</b>' : '<b style="color:#ffc861">Not published yet.</b>'} Personal notes and transcripts are never shown.`;
+    const handle = META.user?.handle;
+    $('#s-handle-row').hidden = false;
+    $('#s-handle-prefix').textContent = location.host + '/u/';
+    $('#s-handle').value = handle || '';
+    $('#s-title').value = s.title === 'My Signal Shelf' ? '' : s.title;
+    $('#s-intro').innerHTML = (handle && s.published
+      ? `Live at <a href="${esc(META.shelfUrl)}" target="_blank">${esc(META.shelfUrl.replace(/^https?:\/\//, ''))}</a> <button class="copy" type="button" data-copytext="${esc(META.shelfUrl)}">Copy link</button><br>`
+      : '<b style="color:#ffc861">Not published yet.</b> ') +
+      'A public page of your top-rated picks that updates as you rate. Personal notes and transcripts are never shown.';
     $('#s-publish').textContent = s.published ? 'Save' : 'Publish';
     $('#s-unpublish').hidden = !s.published;
   }
@@ -454,6 +479,7 @@ async function publish() {
   $('#s-publish').disabled = true;
   try {
     const r = await api('/api/shelf/publish', { method: 'POST', body: JSON.stringify({
+      ...(META.mode === 'cloud' ? { handle: $('#s-handle').value.trim() } : {}),
       title: $('#s-title').value, tagline: $('#s-tagline').value, author: $('#s-author').value,
       minRating: Number($('#s-min').value), includeTakeaways: $('#s-tk').checked,
       includeYoutube: $('#s-yt').checked, includePodcasts: $('#s-pod').checked }) });
@@ -461,7 +487,7 @@ async function publish() {
       ? `Live with <b>${r.count}</b> item${r.count === 1 ? '' : 's'}: <a href="${esc(r.url)}" target="_blank">${esc(r.url)}</a> <button class="copy" type="button" data-copytext="${esc(r.url)}">Copy link</button>`
       : `Published <b>${r.count}</b> item${r.count === 1 ? '' : 's'} to <code>${esc(r.dir)}</code><br><a href="/shelf/" target="_blank">Preview shelf ↗</a> · <a href="/shelf/shelf.json" target="_blank">shelf.json ↗</a>`) +
       (r.count === 0 ? '<br><b style="color:#ffc861">Nothing qualifies yet. Rate some items first.</b>' : '');
-    if (r.url) { $('#s-publish').textContent = 'Save'; $('#s-unpublish').hidden = false; }
+    if (r.url) { $('#s-publish').textContent = 'Save'; $('#s-unpublish').hidden = false; loadMeta(); }
   } catch (e) { toast(e.message, true); }
   finally { $('#s-publish').disabled = false; }
 }
@@ -542,19 +568,17 @@ $('#s-unpublish').addEventListener('click', async () => {
   } catch (e) { toast(e.message, true); }
 });
 
-// Login
-$('#loginform').addEventListener('submit', async e => {
-  e.preventDefault();
-  setToken($('#logintoken').value.trim());
-  try { await start(); $('#login').classList.remove('open'); $('#logintoken').value = ''; }
-  catch (err) { if (err.message !== 'Locked') $('#loginerr').textContent = err.message; }
-});
-
-// Connect panel
+// Account panel
 $('#btn-connect').addEventListener('click', () => {
+  const key = getToken();
+  $('#a-who').innerHTML = META.user?.handle
+    ? `Signed in as <b>@${esc(META.user.handle)}</b>`
+    : 'Anonymous shelf. Pick a username in <b>Public Shelf</b> to get a shareable link.';
+  $('#c-sync').textContent = META.syncUrl || '';
   $('#c-shortcut').textContent = META.shortcutUrl || '';
   $('#c-mcp').textContent = META.mcpUrl || '';
   $('#c-origin').textContent = location.origin;
+  $('#c-key').textContent = key;
   $('#connect').classList.add('open'); document.body.style.overflow = 'hidden';
 });
 document.addEventListener('click', async e => {
@@ -563,7 +587,19 @@ document.addEventListener('click', async e => {
   const text = b.dataset.copytext || $('#' + b.dataset.copy).textContent;
   try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast('Copy failed: select the text instead', true); }
 });
-$('#c-logout').addEventListener('click', e => { e.preventDefault(); setToken(''); location.reload(); });
+$('#switchform').addEventListener('submit', async e => {
+  e.preventDefault();
+  const key = keyFromInput($('#switchkey').value);
+  if (!key) return toast('That doesn\'t look like a Signal Shelf link or key.', true);
+  if (!confirm('Switch this device to that shelf? Make sure you\'ve saved your current private link first.')) return;
+  setToken(key); location.hash = ''; location.reload();
+});
+$('#c-delete').addEventListener('click', async e => {
+  e.preventDefault();
+  if (!confirm('Delete your shelf and everything in it? This cannot be undone.')) return;
+  try { await api('/api/me', { method: 'DELETE' }); setToken(''); location.reload(); }
+  catch (err) { toast(err.message, true); }
+});
 $('#c-export').addEventListener('click', async e => {
   e.preventDefault();
   try {
@@ -576,38 +612,44 @@ $('#c-export').addEventListener('click', async e => {
   } catch (err) { toast(err.message, true); }
 });
 
-// Deep links: #open=<id> (extension) and #add=<url> (iPhone share shortcut)
+// Deep links: #k=<key> (private link), #add=<url> (iPhone share shortcut), #open=<id> (extension)
+function readHash() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  return { k: p.get('k'), add: p.get('add'), open: p.get('open') };
+}
+
 async function handleHash() {
-  const h = location.hash;
-  let m;
-  if ((m = h.match(/^#open=(.+)$/))) {
-    history.replaceState(null, '', location.pathname);
-    return openItem(decodeURIComponent(m[1]));
+  const { k, add, open } = readHash();
+  if (!k && !add && !open) return;
+  history.replaceState(null, '', location.pathname);
+  if (k && keyFromInput(k) && k !== getToken()) {
+    setToken(keyFromInput(k));
+    await Promise.all([loadMeta(), loadEntries()]);
+    toast('Signed in to your shelf on this device');
   }
-  if ((m = h.match(/^#add=(.+)$/s))) {
-    history.replaceState(null, '', location.pathname);
-    let link = m[1];
-    try { link = decodeURIComponent(link); } catch {}
+  if (open) return openItem(open);
+  if (add) {
     toast('Saving…');
     try {
-      const r = await api('/api/ingest-url', { method: 'POST', body: JSON.stringify({ url: link }) });
+      const r = await api('/api/ingest-url', { method: 'POST', body: JSON.stringify({ url: add }) });
       toast(r.message || `Saved "${r.entry.title}"`);
       await Promise.all([loadMeta(), loadEntries()]);
       openItem(r.entry.id);
-    } catch (err) { if (err.message !== 'Locked') toast(err.message, true); }
+    } catch (err) { toast(err.message, true); }
   }
 }
 window.addEventListener('hashchange', handleHash);
 
-let pendingHash = location.hash;
 async function start() {
+  const { k } = readHash();
+  if (k && keyFromInput(k)) setToken(keyFromInput(k)); // a private link signs this device in before anything loads
+  await ensureAccount();
   await loadMeta();
   await loadEntries();
-  if (pendingHash && !location.hash) location.hash = pendingHash; // restore a share that arrived before login
-  pendingHash = '';
   await handleHash();
+  if (WELCOME && META.mode === 'cloud') toast('Your shelf is ready. Paste a link above to add your first video.');
 }
-start().catch(e => { if (e.message !== 'Locked') toast('Server unreachable: ' + e.message, true); });
+start().catch(e => toast('Server unreachable: ' + e.message, true));
 </script>
 </body>
 </html>

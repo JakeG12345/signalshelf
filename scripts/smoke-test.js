@@ -201,7 +201,7 @@ await t('shelf settings + publish + served at /shelf/', async () => {
   assert.ok(html.includes('Ryan&#39;s Shelf') && html.includes('Micro-SaaS idea validation'));
 });
 await t('dashboard HTML served', async () => {
-  assert.ok((await (await fetch(base + '/')).text()).includes('Publish Public Shelf'));
+  assert.ok((await (await fetch(base + '/')).text()).includes('Public Shelf'));
 });
 srv.kill();
 

@@ -12,34 +12,32 @@ Save what you watch and listen to, give it a Signal Rating (1–5), tag the mone
 | `extension/` | Chrome extension: save + transcript, optional auto-capture |
 | `server/` | Optional Mac-only version (local SQLite, Apple Podcasts library sync, stdio MCP) |
 
-## Cloud setup (all doable from an iPhone)
+## How it works (cloud)
 
-1. **Cloudflare** (free): sign up at dash.cloudflare.com, open **Workers & Pages** once, and copy your **Account ID**.
-2. **API token**: Profile → API Tokens → Create Token → template **Edit Cloudflare Workers** → add permission **Account · D1 · Edit** → create and copy it.
-3. **GitHub secrets** (this repo → Settings → Secrets and variables → Actions):
-   - `CLOUDFLARE_API_TOKEN`
-   - `CLOUDFLARE_ACCOUNT_ID`
-   - `APP_TOKEN`: a long passphrase you make up (16+ characters). It unlocks the app and Claude.
-4. **Deploy**: Actions → **Test & deploy** → Run workflow. The run summary shows your URLs. After that, every push to `main` tests and redeploys automatically.
-
-Then open `https://signalshelf.<you>.workers.dev/app/` in Safari, unlock with your APP_TOKEN, and **Share → Add to Home Screen**. The app's **Connect** button has copy-paste setup for:
-
-- **iPhone share sheet**: a 2-action Shortcut so you can Share → Save to Signal Shelf from YouTube, Podcasts, Safari, X…
-- **Claude** (iPhone, web, desktop): add a custom connector on claude.ai with your private MCP URL.
-- **Chrome extension**: paste your workers.dev URL + token into the extension's Server settings.
+- **No sign-up.** Opening `/app/` creates a private, anonymous shelf instantly. Your **private link** (Account panel) is your login: open it on other devices to use the same shelf.
+- **Public shelves** live at `/u/<username>` once you pick a username and press Publish. The landing page `/` lists fresh shelves.
+- **Privacy.** Each person's data is isolated; personal notes and transcripts never appear on public pages. Account panel → Delete my shelf removes everything.
+- **Limits.** New shelves per network per day, saves per user per day, writes per hour and items per shelf (see `limitsFrom` in `worker/src/index.js`; override with Worker vars).
 
 | URL | |
 |---|---|
-| `/` | Public shelf (once you press Publish; updates live as you rate) |
-| `/shelf.json` | Public shelf data |
-| `/app/` | Your private app |
-| `/mcp/<APP_TOKEN>` | Claude connector (keep private) |
+| `/` | Landing page + fresh shelves |
+| `/app/` | The app (add to iPhone home screen) |
+| `/u/<username>` | Public shelf (+ `/shelf.json`) |
+| `/mcp/<your key>` | Your Claude connector (private) |
 
-Transcripts: YouTube sometimes refuses transcript requests from cloud servers. When that happens the video still saves; paste a transcript in the app, or save it from desktop Chrome with the extension (which reads YouTube's transcript panel). Podcasts and web links store their description.
+## Deploying your own
+
+1. **Cloudflare** (free): sign up, open **Workers & Pages** once, copy your **Account ID**.
+2. **API token**: Profile → API Tokens → **Edit Cloudflare Workers** template → add **Account · D1 · Edit**.
+3. **GitHub secrets** (repo or `production` environment): `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
+4. Actions → **Test & deploy** → Run workflow. Every push to `main` then tests and redeploys.
+
+Transcripts: YouTube sometimes refuses transcript requests from cloud servers. The video still saves; paste a transcript in the app, or save it from desktop Chrome with the extension (which reads YouTube's transcript panel). Podcasts and web links store their description.
 
 ## Chrome extension
 
-`chrome://extensions` → Developer mode → **Load unpacked** → `extension/`. In the popup open **Server settings**, enter your workers.dev URL and token. **Auto-capture** (off by default) saves videos after N minutes of real playback.
+`chrome://extensions` → Developer mode → **Load unpacked** → `extension/`. In the popup open **Server settings** and paste the URL and key from the app's Account panel. **Auto-capture** (off by default) saves videos after N minutes of real playback.
 
 ## Claude tools
 
@@ -60,8 +58,8 @@ npm start       # http://localhost:3456
 
 ```bash
 npm test                    # local server + stdio MCP (27 checks)
-cd worker && npm install && npm test   # cloud worker under wrangler dev + remote MCP (12 checks)
-cd worker && npm run dev    # local cloud dev server (put APP_TOKEN=... in worker/.dev.vars)
+cd worker && npm install && npm test   # multi-user cloud worker + remote MCP (14 checks)
+cd worker && npm run dev    # local cloud dev server
 ```
 
 Backups: the app's Connect panel has **Download all data (JSON)**; `POST /api/import` restores it.
