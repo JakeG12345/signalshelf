@@ -60,6 +60,13 @@ export const CLOUD_SCHEMA_SQL = [
     id UNINDEXED, user_id UNINDEXED, title, creator, transcript, notes, takeaways, models,
     tokenize = 'unicode61 remove_diacritics 2'
   )`,
+  `CREATE TABLE IF NOT EXISTS follows (
+    follower_id TEXT NOT NULL,
+    followee_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (follower_id, followee_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_follows_followee ON follows(followee_id)`,
   `CREATE TABLE IF NOT EXISTS rate_limits (
     bucket TEXT PRIMARY KEY,
     count INTEGER NOT NULL,
@@ -84,7 +91,8 @@ export function ensureSchema(db) {
       await db.batch(CLOUD_SCHEMA_SQL.map(sql => db.prepare(sql)));
       // Columns added after launch
       const userCols = ((await db.prepare('PRAGMA table_info(users)').all()).results || []).map(c => c.name);
-      const add = [['password_hash', 'TEXT'], ['password_salt', 'TEXT']].filter(([c]) => !userCols.includes(c));
+      const add = [['password_hash', 'TEXT'], ['password_salt', 'TEXT'], ['bio', 'TEXT'], ['is_private', 'INTEGER DEFAULT 0']]
+        .filter(([c]) => !userCols.includes(c));
       if (add.length) await db.batch(add.map(([c, t]) => db.prepare(`ALTER TABLE users ADD COLUMN ${c} ${t}`)));
     })().catch(err => { schemaReady = null; throw err; });
   }
@@ -171,6 +179,7 @@ export function createStore(db, userId) {
         db.prepare('DELETE FROM entries WHERE user_id = ?').bind(userId),
         db.prepare('DELETE FROM user_settings WHERE user_id = ?').bind(userId),
         db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId),
+        db.prepare('DELETE FROM follows WHERE follower_id = ? OR followee_id = ?').bind(userId, userId),
         db.prepare('DELETE FROM users WHERE id = ?').bind(userId)
       ]);
     }

@@ -104,23 +104,49 @@ try {
     assert.equal((await j('/api/me', { method: 'PUT', headers: as(A), body: JSON.stringify({ handle: '@Ryan_Builds' }) })).body.user.handle, 'ryan_builds');
     assert.equal((await j('/api/me', { method: 'PUT', headers: as(B), body: JSON.stringify({ handle: 'RYAN_BUILDS' }) })).status, 409);
   });
-  await t('publish needs a username; public shelf hides private data', async () => {
-    assert.equal((await j('/api/shelf/publish', { method: 'POST', headers: as(B), body: '{}' })).status, 400);
-    assert.equal((await fetch(base + '/u/ryan_builds')).status, 404, 'not public before publishing');
-    const r = await j('/api/shelf/publish', { method: 'POST', headers: as(A), body: JSON.stringify({ minRating: 4 }) });
-    assert.equal(r.body.url, `${base}/u/ryan_builds`); assert.equal(r.body.count, 1);
+  await t('public profiles: everyone with a username, notes/transcripts never shown, private hides', async () => {
     const page = await (await fetch(base + '/u/ryan_builds')).text();
-    assert.ok(page.includes('@ryan_builds&#39;s Signal Shelf') && page.includes('niche down') && page.includes('Make your own Signal Shelf'));
+    assert.ok(page.includes('@ryan_builds') && page.includes('niche down') && page.includes('AI agency to $30k/mo'));
     assert.ok(!page.includes('A-SECRET') && !page.includes('dentists'));
     const data = (await j('/u/ryan_builds/shelf.json')).body;
-    assert.equal(data.count, 1); assert.ok(!JSON.stringify(data).includes('A-SECRET'));
+    assert.ok(data.items.length >= 1); assert.ok(!JSON.stringify(data).includes('A-SECRET') && !JSON.stringify(data).includes('dentists'));
     assert.equal((await fetch(base + '/@ryan_builds', { redirect: 'manual' })).status, 301);
-    assert.ok((await (await fetch(base + '/')).text()).includes('/u/ryan_builds'), 'landing lists fresh shelves');
+    assert.equal((await fetch(base + '/u/nobody_here')).status, 404);
+    await j('/api/me', { method: 'PUT', headers: as(A), body: JSON.stringify({ is_private: true, bio: 'I build things' }) });
+    assert.equal((await fetch(base + '/u/ryan_builds')).status, 404, 'private profile hidden');
+    assert.ok(!(await (await fetch(base + '/people')).text()).includes('ryan_builds'), 'private profile not listed');
+    await j('/api/me', { method: 'PUT', headers: as(A), body: JSON.stringify({ is_private: false }) });
+    assert.ok((await (await fetch(base + '/u/ryan_builds')).text()).includes('I build things'));
+  });
+  await t('people page + search', async () => {
+    const people = await (await fetch(base + '/people')).text();
+    assert.ok(people.includes('/u/ryan_builds'));
+    assert.ok((await (await fetch(base + '/people?q=ryan')).text()).includes('/u/ryan_builds'));
+    assert.ok(!(await (await fetch(base + '/people?q=zzzz')).text()).includes('/u/ryan_builds'));
+    assert.ok((await (await fetch(base + '/')).text()).includes('/u/ryan_builds'), 'landing lists people');
+  });
+  await t('follow, feed, counts; feed hides private notes', async () => {
+    assert.equal((await j('/api/follow/ryan_builds', { method: 'POST', headers: as(A) })).status, 400, 'cannot follow yourself');
+    assert.deepEqual((await j('/api/follow/ryan_builds', { headers: as(A) })).body, { self: true, following: false });
+    const f = await j('/api/follow/ryan_builds', { method: 'POST', headers: as(B) });
+    assert.equal(f.body.following, true); assert.equal(f.body.followers, 1);
+    await j('/api/follow/ryan_builds', { method: 'POST', headers: as(B) }); // idempotent
+    assert.equal((await j('/api/follow/ryan_builds', { headers: as(B) })).body.following, true);
+    const feed = (await j('/api/feed', { headers: as(B) })).body;
+    assert.ok(feed.some(i => i.id === 'yt_AAAAAAAAAAA' && i.handle === 'ryan_builds' && i.signal_rating === 5));
+    assert.ok(!JSON.stringify(feed).includes('A-SECRET') && !JSON.stringify(feed).includes('dentists'));
+    assert.equal((await j('/api/following', { headers: as(B) })).body[0].handle, 'ryan_builds');
+    assert.ok((await (await fetch(base + '/u/ryan_builds')).text()).includes('<b id="c-followers">1</b> follower<'));
+    await j('/api/me', { method: 'PUT', headers: as(A), body: JSON.stringify({ is_private: true }) });
+    assert.equal((await j('/api/feed', { headers: as(B) })).body.length, 0, 'private profiles drop out of feeds');
+    await j('/api/me', { method: 'PUT', headers: as(A), body: JSON.stringify({ is_private: false }) });
+    assert.equal((await j('/api/follow/ryan_builds', { method: 'DELETE', headers: as(B) })).body.followers, 0);
+    assert.equal((await j('/api/follow/nobody_here', { method: 'POST', headers: as(B) })).status, 404);
   });
   await t('meta gives the user their private links', async () => {
     const m = (await j('/api/meta', { headers: as(A) })).body;
     assert.equal(m.mcpUrl, `${base}/mcp/${A}`); assert.equal(m.syncUrl, `${base}/app/#k=${A}`);
-    assert.equal(m.shortcutUrl, `${base}/app/#k=${A}&add=`); assert.equal(m.shelfUrl, `${base}/u/ryan_builds`);
+    assert.equal(m.shortcutUrl, `${base}/app/#k=${A}&add=`); assert.equal(m.profileUrl, `${base}/u/ryan_builds`);
   });
 
   await t('accounts: sign up, log in on another device, log out', async () => {

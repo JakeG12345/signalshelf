@@ -1,6 +1,6 @@
 // Signal Shelf cloud backend: Cloudflare Worker + D1, multi-user with anonymous accounts.
 //   /                  landing page + fresh public shelves
-//   /u/<handle>        a user's public shelf (+ /shelf.json)
+//   /u/<handle>        a user's public profile (+ /shelf.json); /people lists everyone
 //   /app/              the web app (installable on iPhone)
 //   /api/auth/anon     creates an anonymous account, returns its private key
 //   /api/*             private JSON API (Authorization: Bearer <key>)
@@ -8,7 +8,8 @@
 import { ensureSchema, createStore } from './store.js';
 import { handleMcp } from './mcp.js';
 import { renderLanding, renderNotFound } from './landing.js';
-import { createAnonymousUser, resolveUser, updateProfile, recentPublicShelves, topSignal, userByHandle, rateLimit, looksLikeKey, createAccount, changePassword, login, logout } from './accounts.js';
+import { renderProfileHtml, renderPeopleHtml, publicItem } from '../../shared/profile-render.js';
+import { createAnonymousUser, resolveUser, updateProfile, listPeople, topSignal, userByHandle, followCounts, setFollow, isFollowing, listFollowing, feed, rateLimit, looksLikeKey, createAccount, changePassword, login, logout } from './accounts.js';
 import { captureLink } from '../../shared/capture.js';
 import { supadataProvider } from './transcripts.js';
 import { APP_VERSION, MONETIZATION_MODELS, SOURCES, STATUSES, HttpError } from '../../shared/core.js';
@@ -99,7 +100,7 @@ async function privateApi(request, url, ctx) {
     if (method === 'GET') return json({ ...user, stats: await store.stats() });
     if (method === 'PUT' || method === 'PATCH') {
       const b = await readJson(request);
-      return json({ ok: true, user: await updateProfile(db, user.id, { handle: b.handle, display_name: b.display_name }) });
+      return json({ ok: true, user: await updateProfile(db, user.id, { handle: b.handle, display_name: b.display_name, bio: b.bio, is_private: b.is_private }) });
     }
     if (method === 'DELETE') {
       await store.destroy();
@@ -107,11 +108,22 @@ async function privateApi(request, url, ctx) {
     }
   }
 
+  if ((m = path.match(/^\/api\/follow\/([A-Za-z0-9_]{3,20})$/))) {
+    const target = await userByHandle(db, m[1]);
+    if (!target) throw new HttpError(404, 'No one with that username.');
+    if (method === 'GET') return json({ self: target.id === user.id, following: await isFollowing(db, user.id, target.id) });
+    if (method === 'POST' || method === 'DELETE') return json(await setFollow(db, user.id, m[1], method === 'POST'));
+  }
+  if (path === '/api/following' && method === 'GET') return json(await listFollowing(db, user.id));
+  if (path === '/api/feed' && method === 'GET') return json(await feed(db, user.id, Math.min(Number(url.searchParams.get('limit')) || 60, 200)));
+
   if (path === '/api/meta' && method === 'GET') {
     return json({
       mode: 'cloud', version: APP_VERSION, user,
-      capabilities: { podcastsSync: false, shelfLive: true, accounts: true },
+      capabilities: { podcastsSync: false, shelfLive: true, accounts: true, social: true },
       shelfUrl: user.handle ? `${url.origin}/u/${user.handle}` : null,
+      profileUrl: user.handle ? `${url.origin}/u/${user.handle}` : null,
+      follow: await followCounts(db, user.id),
       mcpUrl: `${url.origin}/mcp/${key}`,
       syncUrl: `${url.origin}/app/#k=${key}`,
       shortcutUrl: `${url.origin}/app/#k=${key}&add=`,
@@ -267,20 +279,30 @@ export default {
           ...(user ? { entries: (await createStore(db, user.id).stats()).total, handle: user.handle } : {}) });
       }
       if (path === '/' || path === '') {
-        return html(renderLanding({ origin: url.origin, shelves: await recentPublicShelves(db), top: await topSignal(db) }), 200, { 'Cache-Control': 'public, max-age=60' });
+        return html(renderLanding({ origin: url.origin, shelves: (await listPeople(db, { limit: 8 })).filter(p => p.items > 0), top: await topSignal(db) }), 200, { 'Cache-Control': 'public, max-age=60' });
+      }
+      if (path === '/people' || path === '/people/') {
+        const q = (url.searchParams.get('q') || '').slice(0, 40);
+        return html(renderPeopleHtml({ people: await listPeople(db, { q, limit: 60 }), q, origin: url.origin }), 200, { 'Cache-Control': q ? 'no-store' : 'public, max-age=60' });
       }
       let m;
       if ((m = path.match(/^\/(?:u\/|@)([A-Za-z0-9_]{3,20})(\/shelf\.json)?\/?$/))) {
         const u = await userByHandle(db, m[1]);
-        const shelf = u ? await shelfFor(db, u) : null;
-        if (!shelf || !shelf.settings.published) {
-          return m[2] ? json({ error: 'Shelf not found' }, 404) : html(renderNotFound(url.origin), 404);
+        if (!u || u.is_private) {
+          const msg = u ? 'This profile is private.' : 'No one has that username yet.';
+          return m[2] ? json({ error: msg }, 404) : html(renderNotFound(url.origin, msg), 404);
         }
         if (path.startsWith('/@')) return Response.redirect(`${url.origin}/u/${u.handle}`, 301);
-        const cache = { 'Cache-Control': 'public, max-age=60' };
-        return m[2]
-          ? json(shelf.data, 200, { ...cache, 'Access-Control-Allow-Origin': '*' })
-          : html(renderShelfHtml(shelf.data, { jsonHref: `/u/${u.handle}/shelf.json`, ctaUrl: `${url.origin}/`, canonicalUrl: `${url.origin}/u/${u.handle}` }), 200, cache);
+        const sort = url.searchParams.get('sort') === 'top' ? 'top' : 'recent';
+        const store = createStore(db, u.id);
+        const items = (await store.query({ sort: sort === 'top' ? 'rating' : 'recent', limit: 200 })).map(publicItem);
+        const counts = await followCounts(db, u.id);
+        const cache = { 'Cache-Control': 'public, max-age=30' };
+        if (m[2]) {
+          return json({ schema: 'signal-shelf-profile/1', handle: u.handle, name: u.display_name || u.handle, bio: u.bio || '', counts, items }, 200,
+            { ...cache, 'Access-Control-Allow-Origin': '*' });
+        }
+        return html(renderProfileHtml({ user: u, counts, items, sort, origin: url.origin }), 200, cache);
       }
       if (path === '/api/auth/login' && request.method === 'POST') {
         return json(await login(db, request, await readJson(request)));

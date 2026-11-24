@@ -11,7 +11,7 @@ export function renderLanding({ origin, shelves = [], top = [] }) {
         <span class="score">${barsHtml(Math.round(t.avg))}<span>on ${t.shelves} shel${t.shelves === 1 ? 'f' : 'ves'}</span></span>
         <a class="add" href="/app/#add=${esc(encodeURIComponent(t.url))}">Add to my shelf</a></li>`).join('');
   const shelfRows = shelves.map(s => `
-      <li><a href="/u/${esc(s.handle)}"><b>${esc(s.name || s.handle)}</b> <span class="by">@${esc(s.handle)}, ${s.items} pick${s.items === 1 ? '' : 's'}</span></a></li>`).join('');
+      <li><a href="/u/${esc(s.handle)}"><b>${esc(s.name || s.handle)}</b> <span class="by">@${esc(s.handle)}, ${s.items} saved</span></a></li>`).join('');
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -97,7 +97,7 @@ ${FONT_LINKS}
 <div class="wrap">
   <nav class="top">
     <a class="wordmark" href="/">${LOGO_SVG}Signal Shelf</a>
-    <div><a class="plain" href="/app/#login">Log in</a><a class="btn small solid" href="/app/">Start a shelf</a></div>
+    <div><a class="plain" href="/people">People</a><a class="plain" href="/app/#login">Log in</a><a class="btn small solid" href="/app/">Start a shelf</a></div>
   </nav>
 
   <section class="hero">
@@ -106,7 +106,7 @@ ${FONT_LINKS}
       <p class="lede">Save YouTube videos and podcasts with their transcripts. Rate them, share your shelf.</p>
       <div class="ctas">
         <a class="btn solid" href="/app/">Start a shelf</a>
-        ${shelves[0] ? `<a class="btn" href="/u/${esc(shelves[0].handle)}">See a real shelf</a>` : ''}
+        ${shelves[0] ? `<a class="btn" href="/people">Browse people</a>` : ''}
       </div>
       <p class="note">Free. No account needed.</p>
     </div>
@@ -133,8 +133,9 @@ ${FONT_LINKS}
   </section>` : ''}
 
   ${shelves.length ? `<section class="block">
-    <h2 class="wide">Recent shelves</h2>
+    <h2 class="wide">People</h2>
     <ul class="rows shelves">${shelfRows}</ul>
+    <p style="margin-top:16px"><a class="plain" href="/people" style="padding:0;color:var(--signal)">Browse everyone</a></p>
   </section>` : ''}
 
 

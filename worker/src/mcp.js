@@ -81,7 +81,7 @@ const TOOLS = [
   },
   {
     name: 'get_public_shelf',
-    description: 'Get the public shelf link and its settings (minimum rating, whether it is published).',
+    description: 'Get the user\'s public profile link.',
     inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true }
   }
@@ -147,8 +147,8 @@ async function callTool(name, a = {}, { store, origin, user, guardCapture, captu
     }
     case 'get_public_shelf': {
       const s = normalizeShelfSettings(await store.getSetting('shelf', {}) || {});
-      if (!user?.handle) return text({ published: false, note: 'No username yet. In the Signal Shelf app, open Public Shelf, pick a username and publish.' });
-      return text({ url: `${origin}/u/${user.handle}`, published: s.published, min_rating: s.minRating });
+      if (!user?.handle) return text({ public: false, note: 'No profile yet. Sign up in the Signal Shelf app to get a public profile.' });
+      return text({ url: `${origin}/u/${user.handle}`, public: !user.is_private });
     }
     default:
       return null;

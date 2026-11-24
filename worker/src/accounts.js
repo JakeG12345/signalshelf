@@ -62,13 +62,14 @@ export async function createAnonymousUser(db, request, limits) {
 export async function resolveUser(db, key) {
   if (!looksLikeKey(key)) return null;
   const hash = await sha256Hex(key);
-  const cols = 'u.id, u.handle, u.display_name, u.created_at, u.last_seen_at, (u.password_hash IS NOT NULL) AS has_password';
+  const cols = 'u.id, u.handle, u.display_name, u.bio, u.is_private, u.created_at, u.last_seen_at, (u.password_hash IS NOT NULL) AS has_password';
   let user = await db.prepare(`SELECT ${cols}, 0 AS via_session FROM users u WHERE u.key_hash = ?`).bind(hash).first();
   if (!user) {
     user = await db.prepare(`SELECT ${cols}, 1 AS via_session FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.key_hash = ?`).bind(hash).first();
   }
   if (!user) return null;
   user.has_password = !!user.has_password;
+  user.is_private = !!user.is_private;
   user.via_session = !!user.via_session;
   const today = new Date().toISOString().slice(0, 10);
   if (!user.last_seen_at || user.last_seen_at.slice(0, 10) < today) {
@@ -77,7 +78,7 @@ export async function resolveUser(db, key) {
   return user;
 }
 
-export async function updateProfile(db, userId, { handle, display_name } = {}) {
+export async function updateProfile(db, userId, { handle, display_name, bio, is_private } = {}) {
   const sets = [];
   const vals = [];
   if (handle !== undefined) {
@@ -93,6 +94,11 @@ export async function updateProfile(db, userId, { handle, display_name } = {}) {
     sets.push('display_name = ?');
     vals.push(String(display_name ?? '').replace(/\s+/g, ' ').trim().slice(0, 60) || null);
   }
+  if (bio !== undefined) {
+    sets.push('bio = ?');
+    vals.push(String(bio ?? '').replace(/\s+/g, ' ').trim().slice(0, 160) || null);
+  }
+  if (is_private !== undefined) { sets.push('is_private = ?'); vals.push(is_private ? 1 : 0); }
   if (sets.length) {
     try {
       await db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).bind(...vals, userId).run();
@@ -101,25 +107,89 @@ export async function updateProfile(db, userId, { handle, display_name } = {}) {
       throw err;
     }
   }
-  return db.prepare('SELECT id, handle, display_name, created_at FROM users WHERE id = ?').bind(userId).first();
+  const u = await db.prepare('SELECT id, handle, display_name, bio, is_private, created_at FROM users WHERE id = ?').bind(userId).first();
+  return { ...u, is_private: !!u.is_private };
 }
 
-/** Public shelves for the landing page. */
-export async function recentPublicShelves(db, limit = 12) {
+// ---------- Public profiles ----------
+// Anyone with a username has a public profile unless they made it private.
+// Public: titles, creators, links, ratings, tags, takeaways. Never public: notes, transcripts.
+const PUBLIC_USER = `u.handle IS NOT NULL AND COALESCE(u.is_private, 0) = 0`;
+
+/** People for the landing and People pages, most recently active first. */
+export async function listPeople(db, { q = '', limit = 30 } = {}) {
+  const term = String(q || '').trim().replace(/^@/, '').toLowerCase().replace(/[^a-z0-9_ ]/g, '');
   const { results } = await db.prepare(`
-    SELECT u.handle, COALESCE(u.display_name, u.handle) AS name, COUNT(e.id) AS items, MAX(e.updated_at) AS updated
+    SELECT u.handle, COALESCE(u.display_name, u.handle) AS name, u.bio,
+      (SELECT COUNT(*) FROM entries e WHERE e.user_id = u.id) AS items,
+      (SELECT COUNT(*) FROM follows f WHERE f.followee_id = u.id) AS followers,
+      (SELECT MAX(e.updated_at) FROM entries e WHERE e.user_id = u.id) AS active
     FROM users u
-    JOIN user_settings s ON s.user_id = u.id AND s.key = 'shelf' AND json_extract(s.value, '$.published') = 1
-    JOIN entries e ON e.user_id = u.id AND e.signal_rating >= COALESCE(json_extract(s.value, '$.minRating'), 4)
-    WHERE u.handle IS NOT NULL
-    GROUP BY u.id ORDER BY updated DESC LIMIT ?`).bind(limit).all();
+    WHERE ${PUBLIC_USER} ${term ? "AND (u.handle LIKE ? OR lower(COALESCE(u.display_name, '')) LIKE ?)" : ''}
+    ORDER BY (items > 0) DESC, active DESC LIMIT ?`).bind(...(term ? [`%${term}%`, `%${term}%`] : []), limit).all();
   return results;
 }
 
 export async function userByHandle(db, handle) {
   const h = String(handle || '').toLowerCase();
   if (!/^[a-z0-9_]{3,20}$/.test(h)) return null;
-  return db.prepare('SELECT id, handle, display_name FROM users WHERE handle = ?').bind(h).first();
+  const u = await db.prepare('SELECT id, handle, display_name, bio, is_private, created_at FROM users WHERE handle = ?').bind(h).first();
+  return u ? { ...u, is_private: !!u.is_private } : null;
+}
+
+export async function followCounts(db, userId) {
+  const r = await db.prepare(`SELECT
+      (SELECT COUNT(*) FROM follows WHERE followee_id = ?) AS followers,
+      (SELECT COUNT(*) FROM follows WHERE follower_id = ?) AS following,
+      (SELECT COUNT(*) FROM entries WHERE user_id = ?) AS items`).bind(userId, userId, userId).first();
+  return r;
+}
+
+export async function setFollow(db, followerId, handle, on) {
+  const target = await userByHandle(db, handle);
+  if (!target) throw new HttpError(404, 'No one with that username.');
+  if (target.id === followerId) throw new HttpError(400, 'You can\'t follow yourself.');
+  if (on) {
+    await db.prepare('INSERT OR IGNORE INTO follows (follower_id, followee_id, created_at) VALUES (?, ?, ?)')
+      .bind(followerId, target.id, new Date().toISOString()).run();
+  } else {
+    await db.prepare('DELETE FROM follows WHERE follower_id = ? AND followee_id = ?').bind(followerId, target.id).run();
+  }
+  const c = await followCounts(db, target.id);
+  return { handle: target.handle, following: on, followers: c.followers, items: c.items };
+}
+
+export async function isFollowing(db, followerId, targetId) {
+  return !!(await db.prepare('SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ?').bind(followerId, targetId).first());
+}
+
+export async function listFollowing(db, userId) {
+  const { results } = await db.prepare(`SELECT u.handle, COALESCE(u.display_name, u.handle) AS name
+    FROM follows f JOIN users u ON u.id = f.followee_id WHERE f.follower_id = ? AND u.handle IS NOT NULL ORDER BY f.created_at DESC`).bind(userId).all();
+  return results;
+}
+
+/** What the people you follow have saved recently (public fields only). */
+export async function feed(db, userId, limit = 60) {
+  const { results } = await db.prepare(`
+    SELECT e.id, e.source, e.title, e.creator, e.url, e.thumbnail, e.signal_rating, e.monetization_models, e.key_takeaways,
+           e.watched_at, e.updated_at, u.handle, COALESCE(u.display_name, u.handle) AS name
+    FROM follows f JOIN users u ON u.id = f.followee_id AND ${PUBLIC_USER}
+    JOIN entries e ON e.user_id = u.id
+    WHERE f.follower_id = ?
+    ORDER BY e.updated_at DESC LIMIT ?`).bind(userId, limit).all();
+  return results.map(r => ({ ...r, monetization_models: JSON.parse(r.monetization_models || '[]'), key_takeaways: JSON.parse(r.key_takeaways || '[]') }));
+}
+
+/** Items on public profiles, ranked by how many people saved them and how they rated them. */
+export async function topSignal(db, limit = 6) {
+  const { results } = await db.prepare(`
+    SELECT e.id, MAX(e.title) AS title, MAX(e.creator) AS creator, MAX(e.url) AS url,
+           COUNT(*) AS shelves, ROUND(AVG(e.signal_rating), 1) AS avg
+    FROM entries e JOIN users u ON u.id = e.user_id AND ${PUBLIC_USER}
+    WHERE e.signal_rating >= 4 AND e.url LIKE 'https://%'
+    GROUP BY e.id ORDER BY shelves DESC, avg DESC, MAX(e.updated_at) DESC LIMIT ?`).bind(limit).all();
+  return results;
 }
 
 // ---------- Username + password accounts ----------
@@ -190,21 +260,4 @@ export async function login(db, request, { handle, password }) {
 /** Ends this device's login session (the shelf's own private key can't be logged out, only replaced). */
 export async function logout(db, key) {
   await db.prepare('DELETE FROM sessions WHERE key_hash = ?').bind(await sha256Hex(key)).run();
-}
-
-/** Items that appear on published shelves, ranked by how many shelves carry them. Only already-public data. */
-export async function topSignal(db, limit = 6) {
-  const { results } = await db.prepare(`
-    SELECT e.id, MAX(e.title) AS title, MAX(e.creator) AS creator, MAX(e.url) AS url,
-           COUNT(*) AS shelves, ROUND(AVG(e.signal_rating), 1) AS avg
-    FROM entries e
-    JOIN users u ON u.id = e.user_id AND u.handle IS NOT NULL
-    JOIN user_settings s ON s.user_id = u.id AND s.key = 'shelf' AND json_extract(s.value, '$.published') = 1
-    WHERE e.signal_rating >= COALESCE(json_extract(s.value, '$.minRating'), 4)
-      AND e.url LIKE 'https://%'
-      AND NOT (e.source = 'youtube' AND COALESCE(json_extract(s.value, '$.includeYoutube'), 1) = 0)
-      AND NOT (e.source = 'apple_podcasts' AND COALESCE(json_extract(s.value, '$.includePodcasts'), 1) = 0)
-      AND NOT (e.source NOT IN ('youtube', 'apple_podcasts') AND COALESCE(json_extract(s.value, '$.includeLinks'), 1) = 0)
-    GROUP BY e.id ORDER BY shelves DESC, avg DESC, MAX(e.updated_at) DESC LIMIT ?`).bind(limit).all();
-  return results;
 }

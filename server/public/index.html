@@ -20,6 +20,7 @@
   :root { --plate:#E6E8E2; --panel:#F4F5F0; --well:#D8DBD3; --ink:#15171A; --mute:#5F645F; --line:#C3C7BE; --signal:#2740FF; --warn:#8A5200; --red:#B3261E;
     --font:"Archivo","Helvetica Neue",Helvetica,Arial,sans-serif; color-scheme:light; }
   * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
   html { -webkit-text-size-adjust:100%; }
   body { margin:0; background:var(--plate); color:var(--ink); font:15px/1.5 var(--font); font-variant-numeric:tabular-nums; }
   a { color:var(--signal); }
@@ -73,6 +74,22 @@
   .card { background:var(--panel); border:1px solid var(--line); border-radius:6px; overflow:hidden; cursor:pointer; display:flex; flex-direction:column; }
   .card:hover { border-color:var(--ink); }
   .card.pending { cursor:default; opacity:.7; }
+  .hbtn { display:inline-block; text-decoration:none; color:var(--ink); border:1.5px solid var(--ink); border-radius:4px; padding:8px 14px; font-weight:650; }
+  .hbtn:hover { border-color:var(--signal); color:var(--signal); }
+  .viewtabs { display:flex; gap:20px; margin:0 0 16px; }
+  .viewtabs button { border:0; border-radius:0; padding:6px 0; font-size:16px; color:var(--mute); border-bottom:3px solid transparent; }
+  .viewtabs button.on { color:var(--ink); border-bottom-color:var(--signal); }
+  .viewtabs button:hover { color:var(--ink); }
+  .feed { border-top:3px solid var(--ink); }
+  .fitem { display:grid; grid-template-columns:150px 1fr auto; gap:18px; padding:16px 0; border-bottom:1px solid var(--line); align-items:start; }
+  .fitem .thumb { border-radius:3px; overflow:hidden; }
+  .fitem .who { font-size:14px; color:var(--mute); margin-bottom:4px; }
+  .fitem .who a { color:var(--ink); font-weight:650; text-decoration:none; }
+  .fitem .ctitle a { color:inherit; text-decoration:none; }
+  .fitem .add { white-space:nowrap; }
+  .fitem .add.done { border-color:var(--line); color:var(--mute); }
+  .switchrow { display:flex; align-items:center; gap:10px; margin-top:12px; font-size:15px; }
+  .switchrow input { width:18px; height:18px; accent-color:var(--signal); }
   .card.pending .ph { animation:pulse 1.2s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity:.35; } }
   .thumb { aspect-ratio:16/9; background:var(--well); position:relative; }
@@ -149,6 +166,10 @@
   @media (max-width:640px) { .src { grid-template-columns:1fr; } }
   @media (prefers-reduced-motion: reduce) { .toast { transition:none; } .card.pending .ph { animation:none; } }
   @media (max-width:640px) {
+    .fitem { grid-template-columns:96px 1fr; gap:12px; }
+    .fitem .thumb { width:auto; }
+    .fitem .add { grid-column:1 / -1; justify-self:start; }
+    .hbtn { padding:7px 11px; font-size:14px; }
     .grid2 { grid-template-columns:1fr; }
     .container { padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom)); }
     header { margin-bottom:16px; }
@@ -179,6 +200,8 @@
       <button id="btn-sync" hidden>Sync Apple Podcasts</button>
       <button id="btn-import">Import</button>
       <button id="btn-connect" hidden>Account</button>
+      <a id="btn-people" class="hbtn" href="/people" hidden>People</a>
+      <button id="btn-profile" hidden>Profile</button>
       <button id="btn-shelf">Public Shelf</button>
     </div>
   </header>
@@ -201,7 +224,12 @@
     </div>
   </div>
 
+  <nav class="viewtabs" id="viewtabs" hidden>
+    <button type="button" data-view="mine" class="on">My shelf</button>
+    <button type="button" data-view="following">Following</button>
+  </nav>
   <div class="grid" id="list"></div>
+  <div id="feed" hidden></div>
 </div>
 
 <!-- Entry editor -->
@@ -286,7 +314,7 @@
 
     <div id="a-signup">
       <label class="lbl">Create your account</label>
-      <p class="meta" style="margin-top:0">Keep this shelf and log in from any device. Free.</p>
+      <p class="meta" style="margin-top:0">Keep this shelf, log in anywhere, and get a public profile others can follow. Free.</p>
       <form id="signupform" class="grid2">
         <input id="su-handle" placeholder="Username" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="username" maxlength="21" />
         <input id="su-pass" type="password" placeholder="Password (8+ characters)" autocomplete="new-password" />
@@ -305,9 +333,19 @@
 
     <div id="a-signedin" hidden>
       <div class="row" style="justify-content:space-between;margin-top:8px">
-        <span>Logged in as <b id="a-handle"></b></span>
+        <span>Logged in as <b id="a-handle"></b>. <a href="#" id="a-viewprofile">View profile</a></span>
         <button id="a-logout" type="button">Log out</button>
       </div>
+      <label class="lbl">Your profile</label>
+      <form id="profileform">
+        <div class="grid2">
+          <input id="p-name" placeholder="Display name" maxlength="60" autocomplete="name">
+          <input id="p-bio" placeholder="One line about you" maxlength="160">
+        </div>
+        <label class="switchrow"><input type="checkbox" id="p-private"> Private profile (only you can see your shelf)</label>
+        <p class="meta" style="margin:8px 0 10px">Your profile shows what you save, your ratings, tags and takeaways. Notes and transcripts are always private.</p>
+        <button type="submit">Save profile</button>
+      </form>
     </div>
 
     <label class="lbl">Private link</label>
@@ -490,6 +528,11 @@ function applyMeta(meta) {
     h.innerHTML = `<a id="home-link" href="/" style="color:inherit;text-decoration:none;display:flex;align-items:center;gap:10px">${h.innerHTML}</a>`;
   }
   if (META.mode === 'cloud') $('#btn-connect').textContent = META.user?.has_password ? 'Account' : 'Sign up';
+  const social = !!META.capabilities?.social;
+  $('#btn-shelf').hidden = social;          // the old "publish a shelf" flow is only for the Mac version
+  $('#btn-people').hidden = !social;
+  $('#btn-profile').hidden = !social;
+  $('#viewtabs').hidden = !social;
   const s = META.stats;
   const n = (v, one, many) => `<b>${v || 0}</b> ${v === 1 ? one : many}`;
   $('#stats').innerHTML = [n(s.total, 'item', 'items'), n(s.youtube, 'video', 'videos'), n(s.podcasts, 'episode', 'episodes'),
@@ -795,6 +838,9 @@ function openAccount(focusLogin = false) {
   $('#a-signedin').hidden = !hasAccount;
   $('#a-handle').textContent = u.handle ? '@' + u.handle : '';
   $('#su-handle').value = u.handle || '';
+  $('#p-name').value = u.display_name || '';
+  $('#p-bio').value = u.bio || '';
+  $('#p-private').checked = !!u.is_private;
   $('#a-who').innerHTML = hasAccount ? '' : 'You\'re using a guest shelf on this device. Create an account to keep it and use it anywhere.';
   $('#a-synctext').textContent = hasAccount
     ? 'Opens your shelf without typing your password (handy for the iPhone Shortcut). Don\'t share it.'
@@ -1002,15 +1048,91 @@ $('#i-save').addEventListener('click', async () => {
   loadMeta(); loadEntries();
 });
 
+// ---------- Profiles, People, Following ----------
+$('#btn-profile').addEventListener('click', () => {
+  if (META.user?.handle && META.user?.has_password) location.href = `/u/${META.user.handle}`;
+  else { openAccount(); toast('Create an account to get your public profile.'); }
+});
+$('#a-viewprofile').addEventListener('click', e => { e.preventDefault(); if (META.user?.handle) location.href = `/u/${META.user.handle}`; });
+$('#profileform').addEventListener('submit', async e => {
+  e.preventDefault();
+  const patch = { display_name: $('#p-name').value, bio: $('#p-bio').value, is_private: $('#p-private').checked };
+  Object.assign(META.user, patch); toast('Profile saved');
+  sync('/api/me', { method: 'PUT', body: JSON.stringify(patch) }, () => loadMeta());
+});
+
+let VIEW = 'mine';
+function setView(v) {
+  VIEW = v;
+  document.querySelectorAll('#viewtabs button').forEach(b => b.classList.toggle('on', b.dataset.view === v));
+  const mine = v === 'mine';
+  $('#list').hidden = !mine; $('.filters').hidden = !mine; $('#feed').hidden = mine;
+  if (!mine) loadFeed();
+}
+$('#viewtabs').addEventListener('click', e => { const b = e.target.closest('[data-view]'); if (b) setView(b.dataset.view); });
+
+function feedItem(it) {
+  const thumb = safeUrl(it.thumbnail);
+  const url = safeUrl(it.url);
+  const mine = ITEMS.has(it.id);
+  return `<div class="fitem">
+    <div class="thumb">${thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<div class="ph">${esc((it.creator || it.title || '?').slice(0, 2).toUpperCase())}</div>`}</div>
+    <div>
+      <div class="who"><a href="/u/${esc(it.handle)}">${esc(it.name)}</a> ${it.signal_rating ? `rated it ${esc(LABELS[it.signal_rating].toLowerCase())}` : 'saved'}, ${fmtDate(it.updated_at || it.watched_at)}</div>
+      <div class="ctitle">${url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(it.title)}</a>` : esc(it.title)}</div>
+      <div class="meta">${esc(it.creator || '')}</div>
+      ${it.signal_rating ? `<div class="meter rated">${barsStatic(it.signal_rating)}<span>${LABELS[it.signal_rating]}</span></div>` : ''}
+      ${it.key_takeaways?.length ? `<div class="tk">${esc(it.key_takeaways[0])}</div>` : ''}
+    </div>
+    ${url ? `<button type="button" class="add ${mine ? 'done' : ''}" data-url="${esc(url)}" ${mine ? 'disabled' : ''}>${mine ? 'On your shelf' : 'Add to my shelf'}</button>` : ''}
+  </div>`;
+}
+
+async function loadFeed() {
+  const box = $('#feed');
+  const cached = cacheGet('feed');
+  if (cached) box.innerHTML = renderFeed(cached);
+  else box.innerHTML = '<p class="meta">Loading…</p>';
+  try {
+    const items = await api('/api/feed');
+    cacheSet('feed', items);
+    if (VIEW === 'following') box.innerHTML = renderFeed(items);
+  } catch (err) { if (!cached) box.innerHTML = `<p class="meta">${esc(err.message)}</p>`; }
+}
+function renderFeed(items) {
+  if (!items.length) return `<div class="empty"><b>Nothing here yet.</b>Follow people to see what they're watching. <a href="/people">Find people</a></div>`;
+  return `<div class="feed">${items.map(feedItem).join('')}</div>`;
+}
+$('#feed').addEventListener('click', async e => {
+  const b = e.target.closest('button.add'); if (!b || b.disabled) return;
+  b.disabled = true; b.textContent = 'Adding…';
+  try {
+    const r = await api('/api/ingest-url', { method: 'POST', body: JSON.stringify({ url: b.dataset.url }) });
+    ITEMS.set(r.entry.id, r.entry);
+    b.textContent = 'On your shelf'; b.classList.add('done');
+    loadEntries(); refreshMetaSoon();
+  } catch (err) { b.disabled = false; b.textContent = 'Add to my shelf'; toast(err.message, true); }
+});
+
+async function followFromLink(handle) {
+  try {
+    await api(`/api/follow/${encodeURIComponent(handle)}`, { method: 'POST' });
+    toast(`Following @${handle}`);
+    setView('following');
+  } catch (err) { toast(err.message, true); }
+}
+
 // Deep links: #k=<key> (private link), #add=<url> (iPhone share shortcut), #open=<id> (extension)
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
-  return { k: p.get('k'), add: p.get('add'), open: p.get('open'), login: p.has('login') ? '1' : null };
+  return { k: p.get('k'), add: p.get('add'), open: p.get('open'), login: p.has('login') ? '1' : null,
+    follow: p.get('follow'), account: p.has('account') ? '1' : null };
 }
 
 async function handleHash() {
-  const { k, add, open, login } = readHash();
-  if (login !== null && login !== undefined && META.mode === 'cloud') { history.replaceState(null, '', location.pathname); return openAccount(true); }
+  const { k, add, open, login, follow, account } = readHash();
+  if ((login || account) && META.mode === 'cloud') { history.replaceState(null, '', location.pathname); return openAccount(!!login); }
+  if (follow && META.mode === 'cloud') { history.replaceState(null, '', location.pathname); return followFromLink(follow); }
   if (!k && !add && !open) return;
   history.replaceState(null, '', location.pathname);
   if (k && keyFromInput(k) && k !== getToken()) {
