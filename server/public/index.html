@@ -72,6 +72,9 @@
   .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; }
   .card { background:var(--panel); border:1px solid var(--line); border-radius:6px; overflow:hidden; cursor:pointer; display:flex; flex-direction:column; }
   .card:hover { border-color:var(--ink); }
+  .card.pending { cursor:default; opacity:.7; }
+  .card.pending .ph { animation:pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity:.35; } }
   .thumb { aspect-ratio:16/9; background:var(--well); position:relative; }
   .thumb img { width:100%; height:100%; object-fit:cover; display:block; }
   .thumb .ph { width:100%; height:100%; display:grid; place-items:center; font-size:26px; font-stretch:125%; font-weight:800; color:var(--mute); }
@@ -144,7 +147,7 @@
   .progress { height:4px; background:var(--line); margin-top:10px; border-radius:2px; overflow:hidden; }
   .progress i { display:block; height:100%; width:0; background:var(--signal); transition:width .2s; }
   @media (max-width:640px) { .src { grid-template-columns:1fr; } }
-  @media (prefers-reduced-motion: reduce) { .toast { transition:none; } }
+  @media (prefers-reduced-motion: reduce) { .toast { transition:none; } .card.pending .ph { animation:none; } }
   @media (max-width:640px) {
     .grid2 { grid-template-columns:1fr; }
     .container { padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom)); }
@@ -451,8 +454,34 @@ let ITEMS = new Map();
 const fmtDate = d => d ? new Date(d.replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(d) ? '' : 'Z')).toLocaleDateString(undefined, { day:'numeric', month:'short', year:'numeric' }) : '';
 const fmtDur = s => !s ? '' : s >= 3600 ? `${Math.floor(s/3600)}h ${Math.round(s%3600/60)}m` : `${Math.round(s/60)}m`;
 
-async function loadMeta() {
-  META = await api('/api/meta');
+// ---------- Instant UI: show cached data first, apply changes locally, sync in the background ----------
+const cacheKey = name => `ss_cache_${name}_${(getToken() || 'local').slice(-8)}`;
+const cacheGet = name => { try { return JSON.parse(localStorage.getItem(cacheKey(name)) || 'null'); } catch { return null; } };
+const cacheSet = (name, v) => { try { localStorage.setItem(cacheKey(name), JSON.stringify(v)); } catch {} };
+let metaTimer;
+const refreshMetaSoon = () => { clearTimeout(metaTimer); metaTimer = setTimeout(() => loadMeta().catch(() => {}), 800); };
+const hasFilters = () => ['#q', '#f-source', '#f-rating', '#f-model', '#f-status', '#f-sort'].some(sel => $(sel).value.trim());
+
+function renderList(items, filtered = hasFilters()) {
+  ITEMS = new Map(items.map(it => [it.id, it]));
+  $('#list').innerHTML = items.length ? items.map(card).join('') :
+    `<div class="empty">${filtered ? 'Nothing matches. Clear the search or filters to see everything.' : '<b>Your shelf is empty.</b>Paste the link to the last video or podcast you watched.'}</div>`;
+  if (!filtered) cacheSet('entries', items.slice(0, 200));
+}
+function replaceCard(it) {
+  const el = document.querySelector(`.card[data-id="${CSS.escape(it.id)}"]`);
+  if (el) el.outerHTML = card(it);
+  if (!hasFilters()) cacheSet('entries', [...ITEMS.values()].slice(0, 200));
+}
+
+/** Sends a change in the background; on failure, undo() restores the screen and the error is shown. */
+function sync(path, opts, undo, onOk) {
+  return api(path, opts).then(r => { refreshMetaSoon(); onOk?.(r); return r; })
+    .catch(err => { undo?.(); toast(`${err.message}. Change undone.`, true); });
+}
+
+function applyMeta(meta) {
+  META = meta;
   const caps = META.capabilities || {};
   $('#btn-sync').hidden = !caps.podcastsSync;
   $('#btn-connect').hidden = META.mode !== 'cloud';
@@ -476,6 +505,12 @@ async function loadMeta() {
   sel.value = prev;
 }
 
+async function loadMeta() {
+  const meta = await api('/api/meta');
+  cacheSet('meta', meta);
+  applyMeta(meta);
+}
+
 let loadSeq = 0;
 async function loadEntries() {
   const seq = ++loadSeq;
@@ -486,9 +521,7 @@ async function loadEntries() {
   try { items = await api('/api/entries?' + p); }
   catch (e) { $('#list').innerHTML = `<div class="empty">Could not load entries: ${esc(e.message)}</div>`; return; }
   if (seq !== loadSeq) return; // a newer search already started
-  ITEMS = new Map(items.map(it => [it.id, it]));
-  $('#list').innerHTML = items.length ? items.map(card).join('') :
-    `<div class="empty">${p.toString() ? 'Nothing matches. Clear the search or filters to see everything.' : '<b>Your shelf is empty.</b>Paste the link to the last video or podcast you watched.'}</div>`;
+  renderList(items, !!p.toString());
 }
 
 function card(it) {
@@ -496,6 +529,9 @@ function card(it) {
   const initials = esc((it.creator || it.title || '?').split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase());
   const flag = it.status === 'to_watch' ? 'To watch' : it.transcript_status === 'missing' ? 'No transcript' : '';
   const snippet = it.match_snippet ? `<div class="snip">${esc(it.match_snippet).replace(/\[/g, '<mark>').replace(/\]/g, '</mark>')}</div>` : '';
+  if (it._pending) return `<div class="card pending" data-id="${esc(it.id)}" aria-busy="true">
+    <div class="thumb"><div class="ph">…</div></div>
+    <div class="cbody"><div class="ctitle">Saving…</div><div class="meta">${esc(it.creator)}, fetching details and transcript</div></div></div>`;
   return `<div class="card" data-id="${esc(it.id)}" tabindex="0">
     <div class="thumb">${thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<div class="ph">${initials}</div>`}
       <span class="badge ${esc(it.source)}">${SOURCE_LABEL[it.source] || 'Link'}</span>
@@ -525,26 +561,45 @@ function renderTags() {
 function setDirty(v = true) { dirty = v; $('#m-dirty').textContent = v ? 'Unsaved changes' : ''; }
 
 async function openItem(id) {
+  const cached = ITEMS.get(id);
+  if (cached) fillModal({ ...cached, transcript: null, personal_notes: null }); // instant
   let e;
-  try { e = await api('/api/entries/' + encodeURIComponent(id)); } catch (err) { return toast(err.message, true); }
+  try { e = await api('/api/entries/' + encodeURIComponent(id)); }
+  catch (err) { if (!cached) toast(err.message, true); else $('#m-tsummary').textContent = 'Transcript (could not load)'; return; }
+  if (current && current.id !== id) return; // user moved on
+  if (cached && dirty) { // keep what they've typed; just fill the slow fields
+    current = { ...e };
+    if (!$('#m-notes').value) $('#m-notes').value = e.personal_notes || '';
+    $('#m-transcript').value = e.transcript || '';
+    $('#m-tsummary').textContent = `Transcript (${(e.transcript || '').length.toLocaleString()} chars)`;
+    return;
+  }
+  fillModal(e);
+}
+
+function fillModal(e) {
+  const loading = e.transcript === null;
   current = e;
   draft = { rating: e.signal_rating || 0, models: new Set(e.monetization_models) };
   $('#m-title').value = e.title;
   const url = safeUrl(e.url);
   $('#m-meta').innerHTML = [esc(e.creator), SOURCE_LABEL[e.source] || 'Link', fmtDur(e.duration_sec),
     `saved ${fmtDate(e.watched_at)}`, url ? `<a href="${esc(url)}" target="_blank" rel="noopener">Open ↗</a>` : ''].filter(Boolean).join(', ');
-  $('#m-warn').innerHTML = e.transcript_status === 'missing'
+  $('#m-warn').innerHTML = loading ? '' : e.transcript_status === 'missing'
     ? `<div class="warnbox">No transcript yet. ${e.source === 'youtube' ? 'YouTube didn\'t hand one over. Paste one below, or save the video from desktop Chrome with the extension.' : 'Paste one below if you have it.'}</div>`
     : e.transcript_status === 'description' ? '<div class="meta" style="margin-top:6px">The "transcript" here is the episode/page description. Paste a full transcript below if you have one.</div>' : '';
   $('#m-status').value = e.status || 'watched';
   $('#m-takeaways').value = (e.key_takeaways || []).join('\n');
   $('#m-notes').value = e.personal_notes || '';
+  $('#m-notes').placeholder = loading ? 'Loading…' : 'Only you see these';
   $('#m-transcript').value = e.transcript || '';
-  $('#m-tsummary').textContent = `Transcript (${(e.transcript || '').length.toLocaleString()} chars)`;
-  $('#m-tdetails').open = false;
+  $('#m-tsummary').textContent = loading ? 'Transcript (loading…)' : `Transcript (${(e.transcript || '').length.toLocaleString()} chars)`;
+  if (!$('#modal').classList.contains('open')) {
+    $('#m-tdetails').open = false;
+    $('#modal').classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
   renderRate(); renderTags(); setDirty(false);
-  $('#modal').classList.add('open');
-  document.body.style.overflow = 'hidden';
 }
 
 function closeModal(el, force = false) {
@@ -564,22 +619,32 @@ async function saveItem() {
     personal_notes: $('#m-notes').value,
     status: $('#m-status').value
   };
-  if ($('#m-transcript').value !== (current.transcript || '')) patch.transcript = $('#m-transcript').value;
-  $('#m-save').disabled = true;
-  try {
-    await api('/api/entries/' + encodeURIComponent(current.id), { method: 'PATCH', body: JSON.stringify(patch) });
-    setDirty(false); closeModal($('#modal'), true); toast('Saved');
-    loadMeta(); loadEntries();
-  } catch (e) { toast(e.message, true); }
-  finally { $('#m-save').disabled = false; }
+  if (current.transcript === null) delete patch.personal_notes; // notes hadn't loaded: don't overwrite them
+  else if ($('#m-transcript').value !== (current.transcript || '')) patch.transcript = $('#m-transcript').value;
+  const id = current.id;
+  const before = ITEMS.get(id) ? { ...ITEMS.get(id) } : null;
+  if (before) {
+    const it = ITEMS.get(id);
+    Object.assign(it, {
+      title: patch.title.trim() || it.title, signal_rating: patch.signal_rating, monetization_models: patch.monetization_models,
+      key_takeaways: patch.key_takeaways.split('\n').map(t => t.replace(/^\s*[-*•]\s*/, '').trim()).filter(Boolean), status: patch.status
+    });
+    replaceCard(it);
+  }
+  setDirty(false); closeModal($('#modal'), true); toast('Saved');
+  sync('/api/entries/' + encodeURIComponent(id), { method: 'PATCH', body: JSON.stringify(patch) },
+    () => { if (before) { ITEMS.set(id, before); replaceCard(before); } },
+    r => { if (r?.entry && ITEMS.has(id)) { ITEMS.set(id, { ...ITEMS.get(id), ...r.entry }); replaceCard(ITEMS.get(id)); } });
 }
 
 async function deleteItem() {
   if (!current || !confirm(`Delete "${current.title}"? This cannot be undone.`)) return;
-  try {
-    await api('/api/entries/' + encodeURIComponent(current.id), { method: 'DELETE' });
-    closeModal($('#modal'), true); toast('Deleted'); loadMeta(); loadEntries();
-  } catch (e) { toast(e.message, true); }
+  const id = current.id;
+  closeModal($('#modal'), true);
+  document.querySelector(`.card[data-id="${CSS.escape(id)}"]`)?.remove();
+  ITEMS.delete(id);
+  toast('Deleted');
+  sync('/api/entries/' + encodeURIComponent(id), { method: 'DELETE' }, () => loadEntries());
 }
 
 // ---------- Shelf ----------
@@ -632,14 +697,11 @@ $('#list').addEventListener('click', async e => {
   if (!bar) return openItem(c.dataset.id);
   // Rate straight from the list
   const it = ITEMS.get(c.dataset.id); if (!it) return;
-  const n = Number(bar.dataset.star), next = it.signal_rating === n ? null : n;
-  try {
-    await api('/api/entries/' + encodeURIComponent(it.id), { method: 'PATCH', body: JSON.stringify({ signal_rating: next }) });
-    it.signal_rating = next;
-    c.outerHTML = card(it);
-    toast(next ? `${LABELS[next]}, ${next} of 5` : 'Rating cleared');
-    loadMeta();
-  } catch (err) { toast(err.message, true); }
+  const n = Number(bar.dataset.star), prev = it.signal_rating, next = prev === n ? null : n;
+  it.signal_rating = next;
+  replaceCard(it);
+  sync('/api/entries/' + encodeURIComponent(it.id), { method: 'PATCH', body: JSON.stringify({ signal_rating: next }) },
+    () => { it.signal_rating = prev; replaceCard(it); });
 });
 $('#list').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('card')) openItem(e.target.dataset.id); });
 
@@ -681,15 +743,27 @@ window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); 
 $('#addform').addEventListener('submit', async e => {
   e.preventDefault();
   const url = $('#addurl').value.trim(); if (!url) return;
-  const btn = e.submitter || $('#addform button'); btn.disabled = true; btn.textContent = 'Saving…';
+  $('#addurl').value = ''; // ready for the next link straight away
+  const tmp = `pending_${Date.now()}`;
+  let host = url; try { host = new URL(/^https?:/i.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, ''); } catch {}
+  const placeholder = { id: tmp, title: 'Saving…', creator: host, source: /youtu/.test(host) ? 'youtube' : 'web',
+    monetization_models: [], key_takeaways: [], signal_rating: null, watched_at: new Date().toISOString(), _pending: true };
+  document.querySelector('#list .empty')?.remove();
+  $('#list').insertAdjacentHTML('afterbegin', card(placeholder));
   try {
     const r = await api('/api/ingest-url', { method: 'POST', body: JSON.stringify({ url, status: $('#addstatus').value }) });
-    $('#addurl').value = '';
-    toast(`Added "${r.entry.title}"` + (r.entry.transcript_chars ? ` · ${r.entry.transcript_chars.toLocaleString()} chars` : ' · no transcript yet'));
-    await Promise.all([loadMeta(), loadEntries()]);
-    openItem(r.entry.id);
-  } catch (err) { toast(err.message, true); }
-  finally { btn.disabled = false; btn.textContent = 'Save to shelf'; }
+    document.querySelector(`.card[data-id="${tmp}"]`)?.remove();
+    document.querySelector(`.card[data-id="${CSS.escape(r.entry.id)}"]`)?.remove(); // re-saved: move to top
+    ITEMS.set(r.entry.id, r.entry);
+    $('#list').insertAdjacentHTML('afterbegin', card(r.entry));
+    if (!hasFilters()) cacheSet('entries', [r.entry, ...[...ITEMS.values()].filter(i => i.id !== r.entry.id)].slice(0, 200));
+    toast(r.entry.transcript_chars ? `Saved, with transcript` : r.message || 'Saved');
+    refreshMetaSoon();
+  } catch (err) {
+    document.querySelector(`.card[data-id="${tmp}"]`)?.remove();
+    if (!$('#addurl').value) $('#addurl').value = url; // give the link back
+    toast(err.message, true);
+  }
 });
 
 $('#btn-sync').addEventListener('click', async e => {
@@ -960,9 +1034,11 @@ window.addEventListener('hashchange', handleHash);
 async function start() {
   const { k } = readHash();
   if (k && keyFromInput(k)) setToken(keyFromInput(k)); // a private link signs this device in before anything loads
+  const cachedMeta = cacheGet('meta'), cachedEntries = cacheGet('entries');
+  if (cachedMeta) applyMeta(cachedMeta);
+  if (cachedEntries) renderList(cachedEntries, false);
   await ensureAccount();
-  await loadMeta();
-  await loadEntries();
+  await Promise.all([loadMeta(), loadEntries()]);
   await handleHash();
   if (WELCOME && META.mode === 'cloud') toast('Your shelf is ready. Paste a link above to add your first video.');
 }
