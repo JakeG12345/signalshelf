@@ -356,13 +356,20 @@
     <p>In Safari tap <b>Share → Add to Home Screen</b>. It opens like an app.</p>
 
     <label class="lbl">iPhone · share from YouTube / Podcasts</label>
-    <ol>
-      <li>Open <b>Shortcuts</b> → <b>+</b> → name it <b>Save to Signal Shelf</b>.</li>
-      <li>Tap <b>ⓘ</b> → turn on <b>Show in Share Sheet</b>.</li>
-      <li>Add action <b>URL Encode</b> (input: Shortcut Input).</li>
-      <li>Add action <b>Open URLs</b>: paste this, then add the <i>URL Encoded Text</i> variable right after it:
-        <code id="c-shortcut"></code><button class="copy" data-copy="c-shortcut">Copy</button></li>
-    </ol>
+    <div id="sc-oneTap" hidden>
+      <button class="primary" type="button" id="c-shortcut-install">Add to iPhone</button>
+      <p class="meta">Open this page in Safari on your iPhone, tap the button, then <b>Add Shortcut</b>. Log in here in Safari once so saves go to your shelf.</p>
+    </div>
+    <details id="sc-manual">
+      <summary style="cursor:pointer">Set it up by hand</summary>
+      <ol>
+        <li>Open <b>Shortcuts</b> → <b>+</b> → name it <b>Save to Signal Shelf</b>.</li>
+        <li>Tap <b>ⓘ</b> → turn on <b>Show in Share Sheet</b>.</li>
+        <li>Add action <b>URL Encode</b> (input: Shortcut Input).</li>
+        <li>Add action <b>Open URLs</b>: paste this, then add the <i>URL Encoded Text</i> variable right after it:
+          <code id="c-shortcut"></code><button class="copy" data-copy="c-shortcut">Copy</button></li>
+      </ol>
+    </details>
     <p class="meta">Then in YouTube or Podcasts: Share → Save to Signal Shelf. It opens with the item added, ready to rate.</p>
 
     <label class="lbl">Claude (iPhone, web, desktop)</label>
@@ -847,6 +854,8 @@ function openAccount(focusLogin = false) {
     : 'Until you create an account, this link is the only way back to this shelf from another device. Don\'t share it.';
   $('#c-sync').textContent = META.syncUrl || '';
   $('#c-shortcut').textContent = META.shortcutUrl || '';
+  $('#sc-oneTap').hidden = !META.shortcutInstallUrl;
+  $('#sc-manual').open = !META.shortcutInstallUrl;
   $('#c-mcp').textContent = META.mcpUrl || '';
   $('#c-origin').textContent = location.origin;
   $('#c-key').textContent = key;
@@ -854,6 +863,7 @@ function openAccount(focusLogin = false) {
   if (focusLogin && !hasAccount) setTimeout(() => $('#li-handle').focus(), 50);
 }
 $('#btn-connect').addEventListener('click', () => openAccount());
+$('#c-shortcut-install').addEventListener('click', () => { if (META.shortcutInstallUrl) location.href = META.shortcutInstallUrl; });
 
 $('#signupform').addEventListener('submit', async e => {
   e.preventDefault();
@@ -1153,15 +1163,34 @@ async function handleHash() {
 }
 window.addEventListener('hashchange', handleHash);
 
+const PENDING_ADD = 'ss_pending_add';
 async function start() {
-  const { k } = readHash();
+  const { k, add } = readHash();
   if (k && keyFromInput(k)) setToken(keyFromInput(k)); // a private link signs this device in before anything loads
+  // Generic share Shortcut opened in a browser with no shelf yet: hold the link until they log in.
+  if (add && !getToken()) {
+    try { localStorage.setItem(PENDING_ADD, JSON.stringify({ url: add, at: Date.now() })); } catch {}
+    history.replaceState(null, '', location.pathname);
+  }
   const cachedMeta = cacheGet('meta'), cachedEntries = cacheGet('entries');
   if (cachedMeta) applyMeta(cachedMeta);
   if (cachedEntries) renderList(cachedEntries, false);
   await ensureAccount();
   await Promise.all([loadMeta(), loadEntries()]);
   await handleHash();
+  let pending = null;
+  try { pending = JSON.parse(localStorage.getItem(PENDING_ADD) || 'null'); } catch {}
+  if (pending && Date.now() - pending.at > 30 * 60 * 1000) { pending = null; try { localStorage.removeItem(PENDING_ADD); } catch {} }
+  if (pending && WELCOME && META.mode === 'cloud') {
+    // New guest shelf in this browser: ask them to log in so the link lands on their real shelf.
+    openAccount(true);
+    return toast('Log in to save that link to your shelf', true);
+  }
+  if (pending) {
+    try { localStorage.removeItem(PENDING_ADD); } catch {}
+    location.hash = 'add=' + encodeURIComponent(pending.url); // handled by handleHash via hashchange
+    return;
+  }
   if (WELCOME && META.mode === 'cloud') toast('Your shelf is ready. Paste a link above to add your first video.');
 }
 start().catch(e => toast('Server unreachable: ' + e.message, true));

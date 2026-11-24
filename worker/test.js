@@ -147,6 +147,7 @@ try {
     const m = (await j('/api/meta', { headers: as(A) })).body;
     assert.equal(m.mcpUrl, `${base}/mcp/${A}`); assert.equal(m.syncUrl, `${base}/app/#k=${A}`);
     assert.equal(m.shortcutUrl, `${base}/app/#k=${A}&add=`); assert.equal(m.profileUrl, `${base}/u/ryan_builds`);
+    assert.equal(m.shortcutInstallUrl, null); // empty SHORTCUT_ICLOUD_URL = manual steps only
   });
 
   await t('accounts: sign up, log in on another device, log out', async () => {

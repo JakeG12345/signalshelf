@@ -17,5 +17,9 @@ database_name = "signalshelf"
 # Filled in automatically by the deploy workflow (it creates the database on first run).
 database_id = "00000000-0000-0000-0000-000000000000"
 
+[vars]
+# iCloud link of the generic "Save to Signal Shelf" Shortcut (opens /app/#add=<url>). Empty = manual steps only.
+SHORTCUT_ICLOUD_URL = ""
+
 [observability]
 enabled = true

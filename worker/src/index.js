@@ -73,7 +73,7 @@ const captureGuard = (db, user, store, limits) => async () => {
 };
 
 async function privateApi(request, url, ctx) {
-  const { db, user, key, limits, store } = ctx;
+  const { db, user, key, limits, store, env = {} } = ctx;
   const path = url.pathname;
   const method = request.method;
   let m;
@@ -127,6 +127,7 @@ async function privateApi(request, url, ctx) {
       mcpUrl: `${url.origin}/mcp/${key}`,
       syncUrl: `${url.origin}/app/#k=${key}`,
       shortcutUrl: `${url.origin}/app/#k=${key}&add=`,
+      shortcutInstallUrl: /^https:\/\/www\.icloud\.com\/shortcuts\//.test(env.SHORTCUT_ICLOUD_URL || '') ? env.SHORTCUT_ICLOUD_URL : null,
       monetizationModels: MONETIZATION_MODELS, sources: SOURCES, statuses: STATUSES, stats: await store.stats()
     });
   }
@@ -326,7 +327,7 @@ export default {
         await rateLimit(db, `w:${user.id}`, limits.writesPerUserPerHour, 3600, 'Too many requests this hour.');
         return handleMcp(request, { store, origin: url.origin, user, guardCapture: captureGuard(db, user, store, limits), capture: captureFor(env, store) });
       }
-      return await privateApi(request, url, { db, user, key, limits, store, capture: captureFor(env, store) });
+      return await privateApi(request, url, { db, user, key, limits, store, env, capture: captureFor(env, store) });
     } catch (err) {
       const status = err.status || 500;
       if (status >= 500) console.error(err);
