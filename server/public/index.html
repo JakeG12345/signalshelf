@@ -2,8 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Signal Shelf</title>
+<meta name="theme-color" content="#0f1216" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Signal Shelf" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="icon-180.png" />
+<link rel="icon" type="image/png" href="icon-192.png" />
 <style>
   :root { --bg:#0f1216; --panel:#171c22; --panel2:#1e252d; --line:#2a333d; --text:#e6ebf0; --muted:#8b98a5; --accent:#00c030; --blue:#40bcf4; --star:#40bcf4; --red:#f05454; --yt:#ff4e45; --pod:#b57bff; }
   * { box-sizing:border-box; }
@@ -28,6 +36,7 @@
   .addbar input { flex:1; min-width:260px; }
   .filters { margin-bottom:18px; }
   .filters input { flex:1; min-width:220px; }
+  .fsel { display:contents; }
   .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(270px,1fr)); gap:14px; }
   .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; overflow:hidden; cursor:pointer; display:flex; flex-direction:column; transition:border-color .15s, transform .15s; }
   .card:hover { border-color:var(--blue); transform:translateY(-1px); }
@@ -79,7 +88,41 @@
   .toast.err { border-color:var(--red); color:#ffb3b3; }
   .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
   .grid2 input, .grid2 select { width:100%; }
-  @media (max-width:640px) { .grid2 { grid-template-columns:1fr; } }
+  .badge.web { color:#7fd1a8; }
+  .login { position:fixed; inset:0; background:var(--bg); display:none; place-items:center; z-index:30; padding:24px; }
+  .login.open { display:grid; }
+  .login form { width:100%; max-width:360px; text-align:center; }
+  .login input { width:100%; margin:16px 0 10px; font-size:16px; }
+  .login button { width:100%; }
+  .connect { font-size:13px; }
+  .connect code { display:block; background:#0f1216; border:1px solid var(--line); border-radius:6px; padding:8px 10px; margin:6px 0 4px; word-break:break-all; font-size:12px; user-select:all; -webkit-user-select:all; }
+  .connect ol { padding-left:18px; margin:6px 0; }
+  .connect li { margin-bottom:6px; }
+  .copy { font-size:12px; padding:5px 10px; }
+  input, select, textarea { font-size:16px; } /* stops iOS zooming into fields */
+  @media (max-width:640px) {
+    .grid2 { grid-template-columns:1fr; }
+    .container { padding:calc(12px + env(safe-area-inset-top)) 12px calc(24px + env(safe-area-inset-bottom)); }
+    h1 { font-size:20px; }
+    header .row button { padding:8px 10px; font-size:13px; }
+    .addbar input, .filters input { min-width:0; flex-basis:100%; }
+    .addbar select, .addbar button { flex:1; }
+    .fsel { display:flex; gap:8px; overflow-x:auto; flex-basis:100%; padding-bottom:2px; scrollbar-width:none; }
+    .fsel::-webkit-scrollbar { display:none; }
+    .fsel select { flex:none; padding:7px 10px; font-size:14px; border-radius:999px; }
+    .kbd { display:none; }
+    .grid { grid-template-columns:1fr; gap:12px; }
+    .card { flex-direction:row; }
+    .thumb { width:120px; flex:none; aspect-ratio:auto; min-height:90px; }
+    .thumb .ph { font-size:20px; }
+    .badge { font-size:9px; left:4px; top:4px; }
+    .flag { display:none; }
+    .cbody { padding:10px 12px; }
+    .modal { padding:0; }
+    .mc { border-radius:0; min-height:100%; border:none; padding:calc(14px + env(safe-area-inset-top)) 16px calc(20px + env(safe-area-inset-bottom)); }
+    .rate button { font-size:34px; padding:0 4px; }
+    .mfoot { position:sticky; bottom:0; background:var(--panel); padding-top:10px; }
+  }
 </style>
 </head>
 <body>
@@ -87,25 +130,28 @@
   <header>
     <h1>Signal <span>Shelf</span></h1>
     <div class="row">
-      <button id="btn-sync">Sync Apple Podcasts</button>
-      <button id="btn-shelf" class="primary">Publish Public Shelf</button>
+      <button id="btn-sync" hidden>Sync Apple Podcasts</button>
+      <button id="btn-connect" hidden>Connect</button>
+      <button id="btn-shelf" class="primary">Public Shelf</button>
     </div>
   </header>
   <div class="stats" id="stats">Loading…</div>
 
   <form class="row addbar" id="addform">
-    <input id="addurl" placeholder="Paste a YouTube link to add it…" autocomplete="off" />
+    <input id="addurl" type="url" inputmode="url" placeholder="Paste a YouTube, podcast or any link…" autocomplete="off" />
     <select id="addstatus"><option value="watched">Watched</option><option value="to_watch">To watch</option></select>
     <button type="submit">Add link</button>
   </form>
 
   <div class="row filters">
     <input id="q" type="search" placeholder="Search transcripts, takeaways, notes, titles…" />
+    <div class="fsel">
     <select id="f-source"><option value="">All sources</option><option value="youtube">YouTube</option><option value="apple_podcasts">Podcasts</option></select>
     <select id="f-rating"><option value="">Any rating</option><option value="5">★★★★★</option><option value="4">★★★★+</option><option value="3">★★★+</option><option value="1">Rated</option></select>
     <select id="f-model"><option value="">All models</option></select>
     <select id="f-status"><option value="">Any status</option><option value="watched">Watched</option><option value="to_watch">To watch</option><option value="in_progress">In progress</option></select>
     <select id="f-sort"><option value="">Newest</option><option value="rating">Top rated</option><option value="oldest">Oldest</option><option value="title">Title</option></select>
+    </div>
   </div>
 
   <div class="grid" id="list"></div>
@@ -151,7 +197,7 @@
       <div class="row">
         <span class="dirty" id="m-dirty"></span>
         <button data-close>Cancel</button>
-        <button class="primary" id="m-save">Save <span style="opacity:.6;font-weight:400">⌘↵</span></button>
+        <button class="primary" id="m-save">Save <span class="kbd" style="opacity:.6;font-weight:400">⌘↵</span></button>
       </div>
     </div>
   </div>
@@ -161,7 +207,7 @@
 <div id="shelf" class="modal" role="dialog" aria-modal="true">
   <div class="mc" style="max-width:560px">
     <div class="mhead"><h2 style="margin:0;flex:1">Publish Public Shelf</h2><button class="x" data-close>×</button></div>
-    <p class="meta">Generates a static, shareable page of your top-rated picks in <code>public-shelf/</code>. Personal notes and transcripts are never included.</p>
+    <p class="meta" id="s-intro">Generates a static, shareable page of your top-rated picks in <code>public-shelf/</code>. Personal notes and transcripts are never included.</p>
     <label class="lbl">Shelf title</label><input id="s-title" style="width:100%" />
     <label class="lbl">Tagline</label><input id="s-tagline" style="width:100%" />
     <div class="grid2">
@@ -176,7 +222,49 @@
       <label><input type="checkbox" id="s-pod" /> Podcasts</label>
     </div>
     <div id="s-result" class="meta" style="margin-top:14px"></div>
-    <div class="mfoot"><span></span><div class="row"><button data-close>Close</button><button class="primary" id="s-publish">Publish</button></div></div>
+    <div class="mfoot"><button class="danger" id="s-unpublish" hidden>Unpublish</button><div class="row"><button data-close>Close</button><button class="primary" id="s-publish">Publish</button></div></div>
+  </div>
+</div>
+
+<!-- Login (cloud) -->
+<div class="login" id="login">
+  <form id="loginform">
+    <h1>Signal <span>Shelf</span></h1>
+    <p class="meta">Enter your access token (the APP_TOKEN you set when deploying).</p>
+    <input id="logintoken" type="password" autocomplete="current-password" placeholder="Access token" />
+    <button class="primary" type="submit">Unlock</button>
+    <p class="meta" id="loginerr" style="color:#ff9b9b"></p>
+  </form>
+</div>
+
+<!-- Connect (cloud): iPhone shortcut, Claude, extension -->
+<div id="connect" class="modal" role="dialog" aria-modal="true">
+  <div class="mc connect" style="max-width:620px">
+    <div class="mhead"><h2 style="margin:0;flex:1">Connect</h2><button class="x" data-close>×</button></div>
+
+    <label class="lbl">1 · Add to iPhone home screen</label>
+    <p>In Safari tap <b>Share → Add to Home Screen</b>. It opens like an app.</p>
+
+    <label class="lbl">2 · Share from YouTube / Podcasts to Signal Shelf</label>
+    <ol>
+      <li>Open <b>Shortcuts</b> → <b>+</b> → name it <b>Save to Signal Shelf</b>.</li>
+      <li>Tap the <b>ⓘ</b> → turn on <b>Show in Share Sheet</b> (receives URLs and Text).</li>
+      <li>Add action <b>URL Encode</b> (input: Shortcut Input).</li>
+      <li>Add action <b>Open URLs</b> with this, then the <i>URL Encoded Text</i> variable right after it:
+        <code id="c-shortcut"></code><button class="copy" data-copy="c-shortcut">Copy</button></li>
+    </ol>
+    <p class="meta">Now in YouTube or Podcasts: Share → Save to Signal Shelf. Safari opens with it added, ready to rate. The first time, unlock once in Safari too (home-screen apps keep a separate login).</p>
+
+    <label class="lbl">3 · Use it in Claude (iPhone, web, desktop)</label>
+    <p>On claude.ai: <b>Settings → Connectors → Add custom connector</b>, name <b>Signal Shelf</b>, URL:</p>
+    <code id="c-mcp"></code><button class="copy" data-copy="c-mcp">Copy</button>
+    <p class="meta">Keep this URL private: it contains your token.</p>
+
+    <label class="lbl">4 · Chrome extension (desktop, optional)</label>
+    <p>In the extension's <b>Server</b> settings use URL <code id="c-origin"></code> and your access token.</p>
+
+    <label class="lbl">Backup</label>
+    <p><a href="#" id="c-export">Download all data (JSON)</a> · <a href="#" id="c-logout">Log out on this device</a></p>
   </div>
 </div>
 
@@ -191,11 +279,23 @@ let current = null;      // entry being edited
 let draft = null;        // { rating, models:Set }
 let dirty = false;
 
+const TOKEN_KEY = 'ss_token';
+const getToken = () => { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } };
+const setToken = t => { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch {} };
+
 async function api(path, opts = {}) {
-  const res = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) } });
+  const token = getToken();
+  const res = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts.headers || {}) } });
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401) { showLogin(getToken() ? 'That token was not accepted.' : ''); throw new Error('Locked'); }
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   return data;
+}
+
+function showLogin(msg = '') {
+  $('#loginerr').textContent = msg;
+  $('#login').classList.add('open');
+  setTimeout(() => $('#logintoken').focus(), 50);
 }
 
 let toastTimer;
@@ -205,15 +305,21 @@ function toast(msg, isErr = false) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = 'toast', isErr ? 6000 : 2800);
 }
 
+const SOURCE_LABEL = { youtube: 'YouTube', apple_podcasts: 'Podcast', web: 'Link', manual: 'Manual' };
 const starStr = n => n ? '★'.repeat(n) + `<span class="off">${'★'.repeat(5 - n)}</span>` : '';
 const fmtDate = d => d ? new Date(d.replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(d) ? '' : 'Z')).toLocaleDateString(undefined, { day:'numeric', month:'short', year:'numeric' }) : '';
 const fmtDur = s => !s ? '' : s >= 3600 ? `${Math.floor(s/3600)}h ${Math.round(s%3600/60)}m` : `${Math.round(s/60)}m`;
 
 async function loadMeta() {
   META = await api('/api/meta');
+  const caps = META.capabilities || {};
+  $('#btn-sync').hidden = !caps.podcastsSync;
+  $('#btn-connect').hidden = META.mode !== 'cloud';
   const s = META.stats;
-  $('#stats').innerHTML = `<b>${s.total || 0}</b> items · <b>${s.youtube || 0}</b> videos · <b>${s.podcasts || 0}</b> podcast episodes · <b>${s.rated || 0}</b> rated` +
-    (s.avg_rating ? ` · avg <b>${s.avg_rating}★</b>` : '') + (s.missing_transcripts ? ` · <b>${s.missing_transcripts}</b> missing transcripts` : '');
+  const n = (v, one, many) => `<b>${v || 0}</b> ${v === 1 ? one : many}`;
+  $('#stats').innerHTML = [n(s.total, 'item', 'items'), n(s.youtube, 'video', 'videos'), n(s.podcasts, 'episode', 'episodes'),
+    s.links ? n(s.links, 'link', 'links') : '', `<b>${s.rated || 0}</b> rated`, s.avg_rating ? `avg <b>${s.avg_rating}★</b>` : '',
+    s.missing_transcripts ? n(s.missing_transcripts, 'missing transcript', 'missing transcripts') : ''].filter(Boolean).join(' · ');
   const used = (s.models || []).map(m => m.model);
   const all = [...new Set([...META.monetizationModels, ...used])];
   const sel = $('#f-model'), prev = sel.value;
@@ -245,7 +351,7 @@ function card(it) {
   const snippet = it.match_snippet ? `<div class="snip">${esc(it.match_snippet).replace(/\[/g, '<mark>').replace(/\]/g, '</mark>')}</div>` : '';
   return `<div class="card" data-id="${esc(it.id)}" tabindex="0">
     <div class="thumb">${thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<div class="ph">${initials}</div>`}
-      <span class="badge ${esc(it.source)}">${it.source === 'youtube' ? 'YouTube' : it.source === 'apple_podcasts' ? 'Podcast' : 'Manual'}</span>
+      <span class="badge ${esc(it.source)}">${SOURCE_LABEL[it.source] || 'Link'}</span>
       ${flag ? `<span class="flag">${flag}</span>` : ''}</div>
     <div class="cbody">
       <div class="ctitle">${esc(it.title)}</div>
@@ -279,11 +385,11 @@ async function openItem(id) {
   draft = { rating: e.signal_rating || 0, models: new Set(e.monetization_models) };
   $('#m-title').value = e.title;
   const url = safeUrl(e.url);
-  $('#m-meta').innerHTML = [esc(e.creator), e.source === 'youtube' ? 'YouTube' : 'Podcast', fmtDur(e.duration_sec),
+  $('#m-meta').innerHTML = [esc(e.creator), SOURCE_LABEL[e.source] || 'Link', fmtDur(e.duration_sec),
     `saved ${fmtDate(e.watched_at)}`, url ? `<a href="${esc(url)}" target="_blank" rel="noopener">Open ↗</a>` : ''].filter(Boolean).join(' · ');
   $('#m-warn').innerHTML = e.transcript_status === 'missing'
-    ? `<div class="warnbox">No transcript yet. ${e.source === 'youtube' ? 'Open the video in Chrome and press <b>Save</b> in the extension (it reads YouTube\'s transcript panel), or paste one below.' : 'Paste one below if you have it.'}</div>`
-    : e.transcript_status === 'description' ? '<div class="meta" style="margin-top:6px">Podcast: the "transcript" is the episode description.</div>' : '';
+    ? `<div class="warnbox">No transcript yet. ${e.source === 'youtube' ? 'YouTube didn\'t hand one over. Paste one below, or save the video from desktop Chrome with the extension.' : 'Paste one below if you have it.'}</div>`
+    : e.transcript_status === 'description' ? '<div class="meta" style="margin-top:6px">The "transcript" here is the episode/page description. Paste a full transcript below if you have one.</div>' : '';
   $('#m-status').value = e.status || 'watched';
   $('#m-takeaways').value = (e.key_takeaways || []).join('\n');
   $('#m-notes').value = e.personal_notes || '';
@@ -337,6 +443,11 @@ async function openShelf() {
   $('#s-min').value = String(s.minRating); $('#s-tk').checked = s.includeTakeaways;
   $('#s-yt').checked = s.includeYoutube; $('#s-pod').checked = s.includePodcasts;
   $('#s-result').textContent = '';
+  if (META.mode === 'cloud') {
+    $('#s-intro').innerHTML = `Your shelf is a live public page at <a href="${esc(META.shelfUrl)}" target="_blank">${esc(META.shelfUrl.replace(/^https?:\/\//, ''))}</a>. It updates automatically as you rate. ${s.published ? '<b style="color:var(--accent)">Published.</b>' : '<b style="color:#ffc861">Not published yet.</b>'} Personal notes and transcripts are never shown.`;
+    $('#s-publish').textContent = s.published ? 'Save' : 'Publish';
+    $('#s-unpublish').hidden = !s.published;
+  }
   $('#shelf').classList.add('open'); document.body.style.overflow = 'hidden';
 }
 async function publish() {
@@ -346,10 +457,11 @@ async function publish() {
       title: $('#s-title').value, tagline: $('#s-tagline').value, author: $('#s-author').value,
       minRating: Number($('#s-min').value), includeTakeaways: $('#s-tk').checked,
       includeYoutube: $('#s-yt').checked, includePodcasts: $('#s-pod').checked }) });
-    $('#s-result').innerHTML = `Published <b>${r.count}</b> item${r.count === 1 ? '' : 's'} to <code>${esc(r.dir)}</code><br>` +
-      `<a href="/shelf/" target="_blank">Preview shelf ↗</a> · <a href="/shelf/shelf.json" target="_blank">shelf.json ↗</a><br>` +
-      `<span>To share: drag the <code>public-shelf</code> folder onto app.netlify.com/drop, or push it to GitHub Pages.</span>` +
+    $('#s-result').innerHTML = (r.url
+      ? `Live with <b>${r.count}</b> item${r.count === 1 ? '' : 's'}: <a href="${esc(r.url)}" target="_blank">${esc(r.url)}</a> <button class="copy" type="button" data-copytext="${esc(r.url)}">Copy link</button>`
+      : `Published <b>${r.count}</b> item${r.count === 1 ? '' : 's'} to <code>${esc(r.dir)}</code><br><a href="/shelf/" target="_blank">Preview shelf ↗</a> · <a href="/shelf/shelf.json" target="_blank">shelf.json ↗</a>`) +
       (r.count === 0 ? '<br><b style="color:#ffc861">Nothing qualifies yet. Rate some items first.</b>' : '');
+    if (r.url) { $('#s-publish').textContent = 'Save'; $('#s-unpublish').hidden = false; }
   } catch (e) { toast(e.message, true); }
   finally { $('#s-publish').disabled = false; }
 }
@@ -423,14 +535,79 @@ $('#btn-sync').addEventListener('click', async e => {
 $('#btn-shelf').addEventListener('click', () => openShelf().catch(e => toast(e.message, true)));
 $('#s-publish').addEventListener('click', publish);
 
-// Deep link: /#open=yt_xxx (used by the Chrome extension)
-function handleHash() {
-  const m = location.hash.match(/^#open=(.+)$/);
-  if (m) { openItem(decodeURIComponent(m[1])); history.replaceState(null, '', location.pathname); }
+$('#s-unpublish').addEventListener('click', async () => {
+  try {
+    await api('/api/shelf/settings', { method: 'PUT', body: JSON.stringify({ published: false }) });
+    toast('Shelf unpublished'); closeModal($('#shelf'));
+  } catch (e) { toast(e.message, true); }
+});
+
+// Login
+$('#loginform').addEventListener('submit', async e => {
+  e.preventDefault();
+  setToken($('#logintoken').value.trim());
+  try { await start(); $('#login').classList.remove('open'); $('#logintoken').value = ''; }
+  catch (err) { if (err.message !== 'Locked') $('#loginerr').textContent = err.message; }
+});
+
+// Connect panel
+$('#btn-connect').addEventListener('click', () => {
+  $('#c-shortcut').textContent = META.shortcutUrl || '';
+  $('#c-mcp').textContent = META.mcpUrl || '';
+  $('#c-origin').textContent = location.origin;
+  $('#connect').classList.add('open'); document.body.style.overflow = 'hidden';
+});
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-copy],[data-copytext]');
+  if (!b) return;
+  const text = b.dataset.copytext || $('#' + b.dataset.copy).textContent;
+  try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast('Copy failed: select the text instead', true); }
+});
+$('#c-logout').addEventListener('click', e => { e.preventDefault(); setToken(''); location.reload(); });
+$('#c-export').addEventListener('click', async e => {
+  e.preventDefault();
+  try {
+    const res = await fetch('/api/export', { headers: { Authorization: `Bearer ${getToken()}` } });
+    if (!res.ok) throw new Error(`Export failed (${res.status})`);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(await res.blob());
+    a.download = `signal-shelf-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+  } catch (err) { toast(err.message, true); }
+});
+
+// Deep links: #open=<id> (extension) and #add=<url> (iPhone share shortcut)
+async function handleHash() {
+  const h = location.hash;
+  let m;
+  if ((m = h.match(/^#open=(.+)$/))) {
+    history.replaceState(null, '', location.pathname);
+    return openItem(decodeURIComponent(m[1]));
+  }
+  if ((m = h.match(/^#add=(.+)$/s))) {
+    history.replaceState(null, '', location.pathname);
+    let link = m[1];
+    try { link = decodeURIComponent(link); } catch {}
+    toast('Saving…');
+    try {
+      const r = await api('/api/ingest-url', { method: 'POST', body: JSON.stringify({ url: link }) });
+      toast(r.message || `Saved "${r.entry.title}"`);
+      await Promise.all([loadMeta(), loadEntries()]);
+      openItem(r.entry.id);
+    } catch (err) { if (err.message !== 'Locked') toast(err.message, true); }
+  }
 }
 window.addEventListener('hashchange', handleHash);
 
-loadMeta().then(loadEntries).then(handleHash).catch(e => toast('Server unreachable: ' + e.message, true));
+let pendingHash = location.hash;
+async function start() {
+  await loadMeta();
+  await loadEntries();
+  if (pendingHash && !location.hash) location.hash = pendingHash; // restore a share that arrived before login
+  pendingHash = '';
+  await handleHash();
+}
+start().catch(e => { if (e.message !== 'Locked') toast('Server unreachable: ' + e.message, true); });
 </script>
 </body>
 </html>

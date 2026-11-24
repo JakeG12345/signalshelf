@@ -72,6 +72,43 @@ export function decodeEntities(s) {
 
 const clean = s => s.replace(/\s+/g, ' ').trim();
 
+/** Depth-first search for every object stored under `key` anywhere inside `obj`. */
+function collect(obj, key, out = [], depth = 0) {
+  if (!obj || typeof obj !== 'object' || depth > 60) return out;
+  if (Array.isArray(obj)) { for (const v of obj) collect(v, key, out, depth + 1); return out; }
+  for (const [k, v] of Object.entries(obj)) {
+    if (k === key) out.push(v);
+    else collect(v, key, out, depth + 1);
+  }
+  return out;
+}
+
+/** Parses the response of YouTube's own "Show transcript" endpoint into plain text. */
+export function parseInnertubeTranscript(json) {
+  const segs = collect(json, 'transcriptSegmentRenderer');
+  return clean(segs.map(s => (s.snippet?.runs || []).map(r => r.text || '').join('') || s.snippet?.simpleText || '').join(' '));
+}
+
+/**
+ * Fallback used when caption files come back empty: asks the same endpoint the
+ * "Show transcript" panel uses, with the params YouTube embeds in the watch page.
+ */
+export async function fetchInnertubeTranscript(html, fetchImpl = fetch) {
+  const initialData = extractJsonObject(html, 'ytInitialData');
+  const params = collect(initialData, 'getTranscriptEndpoint').map(e => e?.params).find(Boolean);
+  if (!params) return '';
+  const version = (html.match(/"INNERTUBE_CLIENT_VERSION":"([\d.]+)"/) || [])[1] || '2.20251120.01.00';
+  const key = (html.match(/"INNERTUBE_API_KEY":"([\w-]+)"/) || [])[1];
+  const res = await fetchImpl(`https://www.youtube.com/youtubei/v1/get_transcript?prettyPrint=false${key ? `&key=${key}` : ''}`, {
+    method: 'POST',
+    headers: { ...HEADERS, 'Content-Type': 'application/json', 'X-Youtube-Client-Name': '1', 'X-Youtube-Client-Version': version, Origin: 'https://www.youtube.com' },
+    body: JSON.stringify({ context: { client: { clientName: 'WEB', clientVersion: version, hl: 'en', gl: 'US' } }, params }),
+    signal: AbortSignal.timeout(TIMEOUT_MS)
+  });
+  if (!res.ok) return '';
+  try { return parseInnertubeTranscript(JSON.parse(await res.text())); } catch { return ''; }
+}
+
 /** Parses json3, srv1 (<text>) or srv3 (<p><s>) caption formats into plain text. */
 export function parseCaptionBody(body) {
   const t = String(body || '').trim();
@@ -125,8 +162,9 @@ export async function fetchYouTubeVideo(input, { fetchImpl = fetch } = {}) {
   };
 
   let player = null;
+  let html = '';
   try {
-    const html = await get(`${url}&hl=en&bpctr=9999999999&has_verified=1`, fetchImpl);
+    html = await get(`${url}&hl=en&bpctr=9999999999&has_verified=1`, fetchImpl);
     player = extractJsonObject(html, 'ytInitialPlayerResponse');
     if (!player) warnings.push('Could not read the YouTube page data (consent wall or layout change).');
   } catch (e) {
@@ -146,10 +184,17 @@ export async function fetchYouTubeVideo(input, { fetchImpl = fetch } = {}) {
     if (!tracks.length) warnings.push('This video has no caption tracks.');
     else {
       out.transcript = await fetchTranscriptFromTrack(pickCaptionTrack(tracks), fetchImpl);
-      if (out.transcript) out.transcript_status = 'ok';
-      else warnings.push('YouTube did not return captions to the server. Open the video in Chrome and press Save in the extension to grab it from the transcript panel.');
     }
+    if (tracks.length) out._hadTracks = true;
   }
+
+  // Works even when the player data is withheld (e.g. "confirm you're not a bot" pages still embed it sometimes).
+  if (!out.transcript && html) {
+    try { out.transcript = await fetchInnertubeTranscript(html, fetchImpl); } catch { /* ignore */ }
+  }
+  if (out.transcript) out.transcript_status = 'ok';
+  else if (out._hadTracks) warnings.push('YouTube did not return a transcript to the server. You can paste one in the app, or save it from desktop Chrome with the extension.');
+  delete out._hadTracks;
 
   if (!out.title) {
     try {

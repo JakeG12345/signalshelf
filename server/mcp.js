@@ -8,7 +8,7 @@ const { z } = await import('zod');
 let dbm, yt, shelf;
 try {
   dbm = await import('./db.js');
-  yt = await import('./youtube.js');
+  yt = await import('../shared/capture.js');
   shelf = await import('./shelf.js');
 } catch (err) {
   console.error('[signal-shelf] failed to open the database:', err.message);
@@ -18,7 +18,7 @@ try {
   process.exit(1);
 }
 
-const server = new McpServer({ name: 'signal-shelf', version: '2.0.0' });
+const server = new McpServer({ name: 'signal-shelf', version: '2.1.0' });
 
 const MAX_TEXT = 120_000;
 const ok = data => ({ content: [{ type: 'text', text: typeof data === 'string' ? data : JSON.stringify(data, null, 2) }] });
@@ -33,7 +33,7 @@ const compact = e => ({
   ...(e.match_snippet ? { match_snippet: e.match_snippet } : {})
 });
 
-const sourceEnum = z.enum(['youtube', 'apple_podcasts', 'manual']);
+const sourceEnum = z.enum(['youtube', 'apple_podcasts', 'web', 'manual']);
 const modelDesc = `Monetization model tag, e.g. ${dbm.MONETIZATION_MODELS.slice(0, 6).map(m => `"${m}"`).join(', ')}`;
 
 server.registerTool('list_watched_media', {
@@ -122,14 +122,14 @@ server.registerTool('rate_and_annotate', {
   return ok(compact(dbm.updateEntry(id, clean)));
 }));
 
-server.registerTool('save_youtube_url', {
-  description: 'Add a YouTube video by link. Fetches title/channel and the transcript when YouTube provides captions to the server.',
+server.registerTool('save_link', {
+  description: 'Add a YouTube video, Apple Podcasts episode or any web link. Fetches title/creator, and the transcript (YouTube) or description (podcasts/pages) when available.',
   inputSchema: {
-    url: z.string().describe('Any YouTube watch/shorts/youtu.be link'),
+    url: z.string().describe('A YouTube, Apple Podcasts, Spotify or any web link'),
     status: z.enum(['watched', 'to_watch']).default('watched')
   }
 }, safe(async ({ url, status }) => {
-  const { warnings, ...data } = await yt.fetchYouTubeVideo(url);
+  const { warnings, ...data } = await yt.captureLink(url);
   dbm.upsertEntry(data);
   const e = dbm.updateEntry(data.id, { status });
   return ok({ saved: compact({ ...e, transcript_chars: (e.transcript || '').length }), warnings });

@@ -1,0 +1,21 @@
+# Signal Shelf cloud backend. Deployed by .github/workflows/deploy.yml on every push to main.
+name = "signalshelf"
+main = "src/index.js"
+compatibility_date = "2025-11-01"
+workers_dev = true
+preview_urls = false
+
+[assets]
+directory = "../server/public"
+binding = "ASSETS"
+run_worker_first = true
+html_handling = "none"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "signalshelf"
+# Filled in automatically by the deploy workflow (it creates the database on first run).
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[observability]
+enabled = true

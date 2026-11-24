@@ -1,0 +1,97 @@
+name: Test & deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Local server + MCP tests
+        run: npm ci && npm test
+      - name: Cloud worker + remote MCP tests
+        working-directory: worker
+        env:
+          WRANGLER_SEND_METRICS: 'false'
+        run: npm ci && npm test
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      APP_TOKEN: ${{ secrets.APP_TOKEN }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+
+      - name: Check secrets
+        run: |
+          missing=""
+          for v in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID APP_TOKEN; do
+            if [ -z "${!v}" ]; then missing="$missing $v"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing. Add them in GitHub → Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          if [ ${#APP_TOKEN} -lt 16 ]; then
+            echo "::error::APP_TOKEN must be at least 16 characters."
+            exit 1
+          fi
+
+      - name: Create or find the D1 database
+        run: |
+          find_id() {
+            npx wrangler d1 list --json 2>/dev/null | node -e '
+              let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
+                try { const list = JSON.parse(s.slice(s.indexOf("["))); const db = list.find(d => d.name === "signalshelf");
+                      process.stdout.write(db ? (db.uuid || db.id || "") : ""); } catch { process.stdout.write(""); }
+              });'
+          }
+          id=$(find_id)
+          if [ -z "$id" ]; then
+            echo "Creating D1 database 'signalshelf'…"
+            npx wrangler d1 create signalshelf
+            id=$(find_id)
+          fi
+          if [ -z "$id" ]; then echo "::error::Could not create or find the D1 database. Check the API token has D1 Edit permission."; exit 1; fi
+          sed -i "s/00000000-0000-0000-0000-000000000000/$id/" wrangler.toml
+          echo "D1 database: $id"
+
+      - name: Deploy worker
+        run: npx wrangler deploy 2>&1 | tee deploy.log
+
+      - name: Set APP_TOKEN secret
+        run: printf '%s' "$APP_TOKEN" | npx wrangler secret put APP_TOKEN
+
+      - name: Summary
+        run: |
+          url=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1)
+          {
+            echo "## Signal Shelf deployed"
+            echo ""
+            echo "- App (add to iPhone home screen): ${url}/app/"
+            echo "- Public shelf: ${url}/"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "App: ${url}/app/"

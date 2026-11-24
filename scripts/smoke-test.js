@@ -34,8 +34,9 @@ v1.close();
 console.log('\nUnit');
 process.env.KT_DB_PATH = DB; process.env.KT_SHELF_DIR = SHELF;
 const dbm = await import('../server/db.js');
-const yt = await import('../server/youtube.js');
+const yt = await import('../shared/youtube.js');
 const shelf = await import('../server/shelf.js');
+const cap = await import('../shared/capture.js');
 
 await t('migration v1→v2 keeps rows and moves notes', () => {
   assert.equal(dbm.db.pragma('user_version', { simple: true }), 2);
@@ -100,6 +101,41 @@ await t('fetchYouTubeVideo with mocked YouTube (captions + empty-captions fallba
   const b = await yt.fetchYouTubeVideo('BBBBBBBBBBB', { fetchImpl: mk('') });
   assert.equal(b.transcript_status, 'missing'); assert.ok(b.warnings.some(w => /extension/.test(w)));
 });
+await t('capture: shared-text URL extraction', () => {
+  assert.equal(cap.extractUrl('Watch this! https://youtu.be/dQw4w9WgXcQ?si=abc.'), 'https://youtu.be/dQw4w9WgXcQ?si=abc');
+  assert.equal(cap.extractUrl('nope'), null);
+  assert.deepEqual(cap.parseApplePodcastUrl('https://podcasts.apple.com/au/podcast/my-first-million/id1469759170?i=1000650000000'), { podcastId: '1469759170', episodeId: '1000650000000' });
+});
+await t('capture: Apple Podcasts episode via iTunes lookup', async () => {
+  const fetchImpl = async url => ({ ok: true, status: 200, text: async () => JSON.stringify({ results: [
+    { kind: 'podcast', collectionName: 'MFM' },
+    { kind: 'podcast-episode', trackId: 1000650000000, trackName: 'Boring businesses', collectionName: 'My First Million', trackTimeMillis: 3600000,
+      releaseDate: '2026-11-01T00:00:00Z', artworkUrl600: 'https://is1-ssl.mzstatic.com/a.jpg', description: 'Shaan and Sam on laundromats', trackViewUrl: 'https://podcasts.apple.com/x' }] }) });
+  const r = await cap.captureLink('https://podcasts.apple.com/au/podcast/x/id1469759170?i=1000650000000', { fetchImpl });
+  assert.equal(r.id, 'pod_apple_1000650000000'); assert.equal(r.source, 'apple_podcasts'); assert.equal(r.duration_sec, 3600);
+  assert.equal(r.transcript_status, 'description'); assert.match(r.transcript, /laundromats/);
+});
+await t('capture: generic page (Spotify/article) via Open Graph', async () => {
+  const html = `<html><head><title>fallback</title><meta property="og:title" content="Episode 12 &amp; pricing"><meta content="Spotify" property="og:site_name"><meta property="og:description" content="How to price an AI agency"><meta property="og:image" content="https://i.scdn.co/x.jpg"></head></html>`;
+  const r = await cap.captureLink('https://open.spotify.com/episode/abc', { fetchImpl: async () => ({ ok: true, status: 200, text: async () => html }) });
+  assert.equal(r.source, 'web'); assert.equal(r.title, 'Episode 12 & pricing'); assert.equal(r.creator, 'Spotify');
+  assert.match(r.id, /^web_[0-9a-f]{20}$/); assert.equal(r.thumbnail, 'https://i.scdn.co/x.jpg');
+});
+await t('YouTube: innertube transcript fallback when caption files are empty', async () => {
+  const player = { playabilityStatus: { status: 'OK' }, videoDetails: { videoId: 'EEEEEEEEEEE', title: 'Agency pricing', author: 'X', lengthSeconds: '60' },
+    captions: { playerCaptionsTracklistRenderer: { captionTracks: [{ baseUrl: 'https://www.youtube.com/api/timedtext?v=E', languageCode: 'en' }] } } };
+  const initial = { engagementPanels: [{ engagementPanelSectionListRenderer: { content: { continuationItemRenderer: { continuationEndpoint: { getTranscriptEndpoint: { params: 'P4R4MS' } } } } } }] };
+  const transcriptJson = { actions: [{ updateEngagementPanelAction: { content: { transcriptRenderer: { content: { transcriptSearchPanelRenderer: { body: { transcriptSegmentListRenderer: { initialSegments: [
+    { transcriptSegmentRenderer: { snippet: { runs: [{ text: 'charge a' }] } } }, { transcriptSegmentRenderer: { snippet: { runs: [{ text: 'setup fee' }] } } }] } } } } } } } }] };
+  let sentParams = null;
+  const fetchImpl = async (url, opts = {}) => {
+    if (url.includes('get_transcript')) { sentParams = JSON.parse(opts.body).params; return { ok: true, status: 200, text: async () => JSON.stringify(transcriptJson) }; }
+    const body = url.includes('/watch') ? `ytcfg.set({"INNERTUBE_CLIENT_VERSION":"2.20260101.00.00"}); var ytInitialPlayerResponse = ${JSON.stringify(player)}; var ytInitialData = ${JSON.stringify(initial)};` : '';
+    return { ok: true, status: 200, text: async () => body };
+  };
+  const r = await yt.fetchYouTubeVideo('EEEEEEEEEEE', { fetchImpl });
+  assert.equal(sentParams, 'P4R4MS'); assert.equal(r.transcript, 'charge a setup fee'); assert.equal(r.transcript_status, 'ok');
+});
 await t('shelf excludes notes/transcripts, escapes HTML', () => {
   dbm.updateEntry('yt_AAAAAAAAAAA', { title: 'Agency <script>alert(1)</script>', personal_notes: 'SECRET-NOTE' });
   const r = shelf.publishShelf({ minRating: 4, title: 'Test Shelf' });
@@ -133,7 +169,7 @@ await t('ingest validation + bad JSON + unknown route', async () => {
   assert.equal((await j('/api/ingest', { method: 'POST', body: '{}' })).status, 400);
   assert.equal((await j('/api/ingest', { method: 'POST', body: '{bad' })).body.error, 'Invalid JSON body');
   assert.equal((await j('/api/nope')).status, 404);
-  assert.equal((await j('/api/ingest-url', { method: 'POST', body: JSON.stringify({ url: 'https://example.com' }) })).status, 400);
+  assert.equal((await j('/api/ingest-url', { method: 'POST', body: JSON.stringify({ url: 'not a link at all' }) })).status, 400);
 });
 await t('foreign websites are blocked (CORS/CSRF)', async () => {
   const r = await j('/api/ingest', { method: 'POST', headers: { Origin: 'https://evil.example' }, body: JSON.stringify({ id: 'x', title: 'x' }) });
@@ -215,7 +251,7 @@ await t('errors come back as isError, not crashes', async () => {
   assert.ok((await call('get_full_transcript', { id: 'nope' })).isError);
   assert.ok((await call('rate_and_annotate', { id: 'nope', signal_rating: 2 })).isError);
   assert.ok((await call('rate_and_annotate', { id: 'pod_1' })).isError);
-  assert.ok((await call('save_youtube_url', { url: 'not a link' })).isError);
+  assert.ok((await call('save_link', { url: 'not a link' })).isError);
 });
 await t('publish_public_shelf', async () => {
   assert.equal(JSON.parse((await call('publish_public_shelf', { min_rating: 3 })).text).published, 3);

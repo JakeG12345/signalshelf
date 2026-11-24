@@ -1,19 +1,28 @@
 // Service worker: talks to the local server (avoids page CORS / Private Network Access issues)
 // and orchestrates capture for both the popup and auto-capture.
-const API = 'http://127.0.0.1:3456';
+const DEFAULT_API = 'http://127.0.0.1:3456';
+
+async function server() {
+  const { apiBase = DEFAULT_API, apiToken = '' } = await chrome.storage.sync.get(['apiBase', 'apiToken']);
+  return { base: String(apiBase || DEFAULT_API).replace(/\/+$/, ''), token: apiToken };
+}
 
 async function api(path, opts = {}) {
+  const { base, token } = await server();
   let res;
   try {
-    res = await fetch(API + path, {
+    res = await fetch(base + path, {
       ...opts,
-      headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts.headers || {}) },
       signal: AbortSignal.timeout(opts.timeout || 20000)
     });
   } catch {
-    throw new Error('Local server is offline. Run "npm start" in your signal-shelf folder.');
+    throw new Error(base.includes('127.0.0.1') || base.includes('localhost')
+      ? 'Local server is offline. Run "npm start", or set your cloud URL in Server settings.'
+      : `Can't reach ${base}. Check the URL in Server settings.`);
   }
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401) throw new Error('Access token missing or wrong. Set it in Server settings.');
   if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
   return data;
 }
@@ -68,7 +77,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     KT_CAPTURE: () => captureTab(msg.tabId),
     KT_AUTO_CAPTURE: () => captureTab(sender.tab.id, { auto: true }),
     KT_INGEST_URL: () => api('/api/ingest-url', { method: 'POST', body: JSON.stringify({ url: msg.url, status: msg.status }), timeout: 45000 }),
-    KT_HEALTH: () => api('/api/health', { timeout: 2500 }),
+    KT_HEALTH: async () => ({ ...(await api('/api/health', { timeout: 4000 })), base: (await server()).base }),
     KT_GET: () => api('/api/entries/' + encodeURIComponent(msg.id)).catch(e => (/not found/i.test(e.message) ? null : Promise.reject(e))),
     KT_RATE: () => api('/api/entries/' + encodeURIComponent(msg.id), { method: 'PATCH', body: JSON.stringify(msg.patch) })
   };

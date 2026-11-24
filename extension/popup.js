@@ -30,20 +30,24 @@ async function rate(n) {
   else setMsg(r.error, 'err');
 }
 
+let appUrl = 'http://127.0.0.1:3456/';
+
 function showEntry(entry) {
   entryId = entry.id;
   renderStars(entry.signal_rating || 0);
   $('#save').textContent = 'Re-save (refresh transcript)';
   const link = $('#open-entry');
   link.hidden = false;
-  link.href = `http://localhost:3456/#open=${encodeURIComponent(entry.id)}`;
+  link.href = `${appUrl}#open=${encodeURIComponent(entry.id)}`;
   link.target = '_blank';
 }
 
 async function init() {
-  const s = await chrome.storage.sync.get({ autoCapture: false, thresholdMin: 2 });
+  const s = await chrome.storage.sync.get({ autoCapture: false, thresholdMin: 2, apiBase: 'http://127.0.0.1:3456', apiToken: '' });
   $('#auto').checked = !!s.autoCapture;
   $('#threshold').value = String(s.thresholdMin);
+  $('#api-base').value = s.apiBase;
+  $('#api-token').value = s.apiToken;
 
   [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const m = (tab?.url || '').match(/^https:\/\/www\.youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/)([\w-]{11})/);
@@ -57,9 +61,19 @@ async function init() {
   }
 
   const h = await send({ type: 'KT_HEALTH' });
-  $('#dot').className = 'dot ' + (h.ok ? 'on' : 'off');
-  $('#srv').textContent = h.ok ? `server v${h.data.version} · ${h.data.entries} items` : 'server offline';
-  if (!h.ok) { setMsg('Start the server: npm start (in your signal-shelf folder)', 'err'); $('#save').disabled = true; return; }
+  const ready = h.ok && (h.data.mode !== 'cloud' || h.data.authed);
+  $('#dot').className = 'dot ' + (ready ? 'on' : 'off');
+  if (h.ok) {
+    appUrl = h.data.base + (h.data.dashboard || '/');
+    $('#dash').href = appUrl;
+  }
+  $('#srv').textContent = !h.ok ? 'offline' : !ready ? 'token needed' : `${h.data.mode || 'local'} · ${h.data.entries} items`;
+  if (!ready) {
+    setMsg(h.ok ? 'Enter your access token in Server settings.' : h.error, 'err');
+    $('#save').disabled = true;
+    $('#srv-settings').open = true;
+    return;
+  }
 
   if (videoId) {
     const r = await send({ type: 'KT_GET', id: `yt_${videoId}` });
@@ -108,5 +122,12 @@ $('#auto').addEventListener('change', e => {
   setMsg(e.target.checked ? `Auto-capture on: videos save after ${$('#threshold').value} min of playback.` : 'Auto-capture off.', 'ok');
 });
 $('#threshold').addEventListener('change', e => chrome.storage.sync.set({ thresholdMin: Number(e.target.value) }));
+
+$('#api-save').addEventListener('click', async () => {
+  let base = $('#api-base').value.trim().replace(/\/+$/, '').replace(/\/app$/, '');
+  if (base && !/^https?:\/\//.test(base)) base = 'https://' + base;
+  await chrome.storage.sync.set({ apiBase: base || 'http://127.0.0.1:3456', apiToken: $('#api-token').value.trim() });
+  location.reload();
+});
 
 init();

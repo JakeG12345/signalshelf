@@ -1,20 +1,35 @@
 {
   "manifest_version": 3,
   "name": "Signal Shelf",
-  "version": "2.0.0",
-  "description": "Save YouTube videos + transcripts to your local Signal Shelf and Claude MCP memory. Optional auto-capture.",
-  "permissions": ["activeTab", "scripting", "storage", "tabs"],
+  "version": "2.1.0",
+  "description": "Save YouTube videos + transcripts to Signal Shelf (cloud or local). Optional auto-capture.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "tabs"
+  ],
   "host_permissions": [
     "https://www.youtube.com/*",
     "http://localhost:3456/*",
-    "http://127.0.0.1:3456/*"
+    "http://127.0.0.1:3456/*",
+    "https://*.workers.dev/*"
   ],
-  "background": { "service_worker": "background.js" },
-  "action": { "default_popup": "popup.html", "default_title": "Signal Shelf" },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Signal Shelf"
+  },
   "content_scripts": [
     {
-      "matches": ["https://www.youtube.com/*"],
-      "js": ["content.js"],
+      "matches": [
+        "https://www.youtube.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ]

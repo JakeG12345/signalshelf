@@ -1,6 +1,6 @@
 {
   "name": "signal-shelf",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Letterboxd for money-making & AI YouTube videos and podcasts: local-first tracker, Chrome extension, public shelf, and Claude MCP memory",
   "type": "module",
   "scripts": {

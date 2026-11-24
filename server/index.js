@@ -8,7 +8,7 @@ import {
   upsertEntry, queryEntries, getEntryById, updateEntry, deleteEntry, getStats,
   syncApplePodcastsMac, MONETIZATION_MODELS, SOURCES, STATUSES, SCHEMA_VERSION, DB_PATH, HttpError
 } from './db.js';
-import { fetchYouTubeVideo } from './youtube.js';
+import { captureLink } from '../shared/capture.js';
 import { publishShelf, getShelfSettings, saveShelfSettings, SHELF_DIR } from './shelf.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -39,11 +39,15 @@ const wrap = fn => async (req, res, next) => {
 
 app.get('/api/health', (req, res) => {
   const stats = getStats();
-  res.json({ ok: true, version: pkg.version, schema: SCHEMA_VERSION, db: DB_PATH, entries: stats.total, pid: process.pid });
+  res.json({ ok: true, mode: 'local', dashboard: '/', version: pkg.version, schema: SCHEMA_VERSION, db: DB_PATH, entries: stats.total, pid: process.pid });
 });
 
 app.get('/api/meta', (req, res) => {
-  res.json({ monetizationModels: MONETIZATION_MODELS, sources: SOURCES, statuses: STATUSES, stats: getStats() });
+  res.json({
+    mode: 'local', version: pkg.version,
+    capabilities: { podcastsSync: process.platform === 'darwin', shelfLive: false },
+    monetizationModels: MONETIZATION_MODELS, sources: SOURCES, statuses: STATUSES, stats: getStats()
+  });
 });
 
 // Ingest from the Chrome extension (or any local script)
@@ -61,11 +65,10 @@ app.post('/api/ingest', wrap((req, res) => {
 app.post('/api/ingest-url', wrap(async (req, res) => {
   const { url, status } = req.body || {};
   if (!url) throw new HttpError(400, 'url is required');
-  const video = await fetchYouTubeVideo(url);
-  const { warnings, ...data } = video;
+  const { warnings, ...data } = await captureLink(url);
   let entry = upsertEntry(data);
   if (status && STATUSES.includes(status)) entry = updateEntry(entry.id, { status });
-  res.json({ ok: true, entry: slim(entry), warnings });
+  res.json({ ok: true, entry: slim(entry), warnings, message: savedMessage(entry, warnings) });
 }));
 
 app.post('/api/sync/podcasts', wrap((req, res) => {
@@ -110,6 +113,11 @@ app.use((err, req, res, _next) => {
   if (status >= 500) console.error('[error]', err);
   res.status(status).json({ error: err.type === 'entity.parse.failed' ? 'Invalid JSON body' : err.message });
 });
+
+function savedMessage(e, warnings = []) {
+  const t = e.transcript_chars ? `${e.transcript_chars.toLocaleString()} chars` : e.transcript_status === 'description' ? 'description only' : 'no transcript';
+  return `Saved "${e.title}" (${t})`;
+}
 
 function slim(e) {
   if (!e) return e;

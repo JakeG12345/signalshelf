@@ -6,3 +6,8 @@ server/knowledge.db-shm
 _v1_backup/
 public-shelf/
 *.bundle
+
+# Worker
+worker/node_modules/
+worker/.wrangler/
+worker/.dev.vars
