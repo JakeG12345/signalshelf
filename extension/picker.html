@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pick from YouTube history · Signal Shelf</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #E6E8E2; color: #15171A; font: 15px/1.5 "Archivo", "Helvetica Neue", Helvetica, Arial, sans-serif; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 28px 22px 48px; }
+  h1 { font-size: 24px; font-weight: 800; letter-spacing: -.02em; margin: 0 0 4px; }
+  .mute { color: #5F645F; }
+  .bar { display: flex; gap: 10px; align-items: center; margin: 18px 0 8px; flex-wrap: wrap; }
+  .bar .grow { flex: 1; }
+  input[type=search] { flex: 1; min-width: 160px; font: inherit; padding: 8px 10px; border: 1.5px solid #C3C7BE; border-radius: 4px; background: #fff; }
+  button { font: inherit; font-weight: 650; cursor: pointer; padding: 8px 14px; border-radius: 4px; border: 1.5px solid #15171A; background: transparent; color: #15171A; }
+  button.solid { background: #15171A; color: #E6E8E2; }
+  button.solid:hover { background: #2740FF; border-color: #2740FF; color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.small { padding: 4px 10px; font-size: 13px; border-color: #C3C7BE; }
+  ul { list-style: none; margin: 0; padding: 0; border-top: 3px solid #15171A; }
+  li label { display: grid; grid-template-columns: 22px 1fr auto; gap: 10px; align-items: center; padding: 10px 2px; border-bottom: 1px solid #C3C7BE; cursor: pointer; }
+  li input { width: 18px; height: 18px; margin: 0; accent-color: #2740FF; }
+  .t { font-weight: 650; }
+  .s { color: #5F645F; font-size: 13px; }
+  .when { color: #5F645F; font-size: 13px; }
+  li.saved { opacity: .55; }
+  li.saved .when::before { content: 'Saved'; font-weight: 650; color: #15171A; }
+  .foot { position: sticky; bottom: 0; background: #E6E8E2; padding: 14px 0; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .progress { height: 4px; background: #C3C7BE; border-radius: 2px; overflow: hidden; }
+  .progress i { display: block; height: 100%; width: 0; background: #2740FF; transition: width .2s; }
+  #status.err { color: #B3261E; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Pick from YouTube history</h1>
+  <p class="mute" id="status">Reading your recent YouTube history…</p>
+  <div class="bar" id="bar" hidden>
+    <input type="search" id="q" placeholder="Filter">
+    <button class="small" id="all">Select all</button>
+    <button class="small" id="none">Clear</button>
+  </div>
+  <ul id="list"></ul>
+  <div class="foot" id="foot" hidden>
+    <div class="progress grow" id="progress" hidden><i></i></div>
+    <span class="mute grow" id="count"></span>
+    <button class="solid" id="save" disabled>Save to shelf</button>
+  </div>
+</div>
+<script src="picker.js"></script>
+</body>
+</html>

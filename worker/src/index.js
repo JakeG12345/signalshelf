@@ -41,6 +41,12 @@ const slim = e => {
 };
 const savedMessage = e => `Saved "${e.title}" (${e.transcript_chars ? `${e.transcript_chars.toLocaleString('en-AU')} chars` : e.transcript_status === 'description' ? 'description only' : 'no transcript'})`;
 
+const validDate = v => {
+  if (!v) return null;
+  const t = Date.parse(v);
+  return Number.isFinite(t) && t < Date.now() + 86400000 ? new Date(t).toISOString() : null;
+};
+
 async function readJson(request) {
   try { return await request.json(); } catch { throw new HttpError(400, 'Invalid JSON body'); }
 }
@@ -119,17 +125,18 @@ async function privateApi(request, url, ctx) {
     const entry = slim(await store.upsert({
       id: b.id, source: b.source || 'youtube', title: String(b.title || '').trim(), creator: b.creator, url: b.url,
       duration_sec: b.duration_sec, transcript: b.transcript, published_at: b.published_at || null,
-      thumbnail: b.thumbnail || null, transcript_status: b.transcript_status || null, tags: b.tags || null
+      thumbnail: b.thumbnail || null, transcript_status: b.transcript_status || null, tags: b.tags || null,
+      watched_at: validDate(b.watched_at)
     }));
     return json({ ok: true, entry, message: savedMessage(entry) });
   }
 
   if (path === '/api/ingest-url' && method === 'POST') {
-    const { url: link, status } = await readJson(request);
+    const { url: link, status, watched_at } = await readJson(request);
     if (!link) throw new HttpError(400, 'url is required');
     await guardCapture();
     const { warnings, ...data } = await ctx.capture(link);
-    let entry = await store.upsert(data);
+    let entry = await store.upsert({ ...data, watched_at: validDate(watched_at) });
     if (status && STATUSES.includes(status)) entry = await store.update(entry.id, { status });
     entry = slim(entry);
     return json({ ok: true, entry, warnings, message: savedMessage(entry) });
@@ -145,6 +152,18 @@ async function privateApi(request, url, ctx) {
       q: p.get('q') || '', source: p.get('source'), minRating: p.get('minRating') ? Number(p.get('minRating')) : null,
       model: p.get('model'), status: p.get('status'), sort: p.get('sort'), limit: Number(p.get('limit')) || 100, offset: p.get('offset')
     }));
+  }
+
+  if (path === '/api/entries/exists' && method === 'POST') {
+    const { ids } = await readJson(request);
+    if (!Array.isArray(ids)) throw new HttpError(400, 'Expected { ids: [...] }');
+    const saved = [];
+    for (let i = 0; i < Math.min(ids.length, 1000); i += 90) {
+      const chunk = ids.slice(i, i + 90).map(String);
+      const { results } = await db.prepare(`SELECT id FROM entries WHERE user_id = ? AND id IN (${chunk.map(() => '?').join(',')})`).bind(user.id, ...chunk).all();
+      saved.push(...results.map(r => r.id));
+    }
+    return json({ saved });
   }
 
   if ((m = path.match(/^\/api\/entries\/([^/]+)$/))) {

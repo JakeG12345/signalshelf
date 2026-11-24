@@ -56,17 +56,18 @@ app.post('/api/ingest', wrap((req, res) => {
   const entry = upsertEntry({
     id: b.id, source: b.source || 'youtube', title: String(b.title || '').trim(), creator: b.creator,
     url: b.url, duration_sec: b.duration_sec, transcript: b.transcript, published_at: b.published_at || null,
-    thumbnail: b.thumbnail || null, transcript_status: b.transcript_status || null, tags: b.tags || null
+    thumbnail: b.thumbnail || null, transcript_status: b.transcript_status || null, tags: b.tags || null,
+    watched_at: b.watched_at && Number.isFinite(Date.parse(b.watched_at)) ? new Date(b.watched_at).toISOString() : null
   });
   res.json({ ok: true, entry: slim(entry) });
 }));
 
 // Paste a YouTube link: fetched server-side
 app.post('/api/ingest-url', wrap(async (req, res) => {
-  const { url, status } = req.body || {};
+  const { url, status, watched_at } = req.body || {};
   if (!url) throw new HttpError(400, 'url is required');
   const { warnings, ...data } = await captureLink(url);
-  let entry = upsertEntry(data);
+  let entry = upsertEntry({ ...data, watched_at: watched_at && Number.isFinite(Date.parse(watched_at)) ? new Date(watched_at).toISOString() : null });
   if (status && STATUSES.includes(status)) entry = updateEntry(entry.id, { status });
   res.json({ ok: true, entry: slim(entry), warnings, message: savedMessage(entry, warnings) });
 }));
@@ -81,6 +82,11 @@ app.get('/api/entries', wrap((req, res) => {
     q: q ? String(q) : '', source: source || null, minRating: minRating ? Number(minRating) : null,
     model: model || null, status: status || null, sort: sort || null, limit: Number(limit) || 100, offset
   }));
+}));
+
+app.post('/api/entries/exists', wrap((req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.slice(0, 1000).map(String) : [];
+  res.json({ saved: ids.filter(id => getEntryById(id)) });
 }));
 
 app.get('/api/entries/:id', wrap((req, res) => {

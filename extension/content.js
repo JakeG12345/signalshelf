@@ -161,6 +161,21 @@
       extract(msg.playerResponse).then(sendResponse, err => sendResponse({ ok: false, error: err.message }));
       return true;
     }
+    if (msg?.type === 'KT_HISTORY') {
+      fetch('/feed/history', { credentials: 'include' })
+        .then(r => r.text())
+        .then(html => {
+          const data = extractJsonObject(html, 'ytInitialData');
+          const items = data ? globalThis.ktParseHistory(data) : [];
+          if (!items.length) {
+            const signedOut = /"LOGGED_IN":false|ServiceLogin|accounts\.google\.com\/ServiceLogin/.test(html);
+            return sendResponse({ ok: false, error: signedOut ? 'Sign in to YouTube in Chrome first.' : 'No watch history found. Is YouTube history turned on?' });
+          }
+          sendResponse({ ok: true, items });
+        })
+        .catch(err => sendResponse({ ok: false, error: `Couldn't read your YouTube history: ${err.message}` }));
+      return true;
+    }
     if (msg?.type === 'KT_STATE') {
       sendResponse({ videoId: currentVideoId(), watchedSec: Math.round(watch.played), autoSaved: watch.saved });
       return false;

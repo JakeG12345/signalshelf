@@ -84,6 +84,12 @@ try {
     assert.equal((await j('/api/entries?model=ai%20agency', { headers: as(A) })).body.length, 1);
     assert.equal((await j('/api/entries?q=%22((', { headers: as(A) })).body.length, 0);
   });
+  await t('exists check is per user; watched_at kept', async () => {
+    assert.deepEqual((await j('/api/entries/exists', { method: 'POST', headers: as(A), body: JSON.stringify({ ids: ['yt_AAAAAAAAAAA', 'yt_zzzzzzzzzzz'] }) })).body.saved, ['yt_AAAAAAAAAAA']);
+    assert.deepEqual((await j('/api/entries/exists', { method: 'POST', headers: as(B), body: JSON.stringify({ ids: ['yt_AAAAAAAAAAA'] }) })).body.saved, []);
+    const r = await j('/api/ingest', { method: 'POST', headers: as(B), body: JSON.stringify({ id: 'pod_x', source: 'apple_podcasts', title: 'Ep', watched_at: '2026-05-06T07:08:09Z' }) });
+    assert.equal(r.body.entry.watched_at, '2026-05-06T07:08:09.000Z');
+  });
   await t('per-user item cap', async () => {
     for (const n of [1, 2, 3]) {
       assert.equal((await j('/api/ingest', { method: 'POST', headers: as(A), body: JSON.stringify({ id: `web_${n}`, source: 'web', title: `Link ${n}` }) })).status, 200);

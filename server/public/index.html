@@ -123,6 +123,27 @@
   .connect li { margin-bottom:6px; }
   .connect p { margin:6px 0; }
   .copy { font-size:13px; padding:4px 10px; border-color:var(--line); }
+  .src { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:14px; }
+  .src > div { border:1.5px solid var(--line); border-radius:6px; padding:16px; background:var(--panel); }
+  .src h3 { margin:0 0 4px; font-size:17px; }
+  .src p { margin:0 0 12px; color:var(--mute); font-size:14px; }
+  .src ol { margin:0 0 12px; padding-left:20px; font-size:14px; color:var(--mute); }
+  .src code { font-size:12px; word-break:break-all; background:var(--plate); padding:1px 4px; border-radius:3px; }
+  .filepick { display:inline-block; cursor:pointer; }
+  .filepick input { display:none; }
+  .pickbar { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; margin:14px 0 8px; font-size:14px; }
+  .pickbar .grow { flex:1; }
+  .picklist { list-style:none; margin:0; padding:0; border-top:3px solid var(--ink); max-height:56vh; overflow-y:auto; }
+  .picklist li label { display:grid; grid-template-columns:22px 1fr auto; gap:10px; align-items:center; padding:10px 2px; border-bottom:1px solid var(--line); cursor:pointer; }
+  .picklist input { width:18px; height:18px; margin:0; accent-color:var(--signal); }
+  .picklist .t { font-weight:650; line-height:1.3; }
+  .picklist .s { color:var(--mute); font-size:13px; }
+  .picklist .when { color:var(--mute); font-size:13px; text-align:right; white-space:nowrap; }
+  .picklist li.saved { opacity:.55; }
+  .picklist li.saved .when::before { content:'Saved '; font-weight:650; color:var(--ink); }
+  .progress { height:4px; background:var(--line); margin-top:10px; border-radius:2px; overflow:hidden; }
+  .progress i { display:block; height:100%; width:0; background:var(--signal); transition:width .2s; }
+  @media (max-width:640px) { .src { grid-template-columns:1fr; } }
   @media (prefers-reduced-motion: reduce) { .toast { transition:none; } }
   @media (max-width:640px) {
     .grid2 { grid-template-columns:1fr; }
@@ -153,6 +174,7 @@
     <h1><svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect width="26" height="26" rx="5" fill="#15171A"/><rect x="5" y="13" width="3" height="5" fill="#E6E8E2"/><rect x="9.5" y="10.5" width="3" height="7.5" fill="#E6E8E2"/><rect x="14" y="8" width="3" height="10" fill="#5B70FF"/><rect x="18.5" y="5.5" width="3" height="12.5" fill="#5B70FF"/><rect x="4" y="19.5" width="18" height="1.5" fill="#E6E8E2"/></svg>Signal Shelf</h1>
     <div class="row">
       <button id="btn-sync" hidden>Sync Apple Podcasts</button>
+      <button id="btn-import">Import</button>
       <button id="btn-connect" hidden>Account</button>
       <button id="btn-shelf">Public Shelf</button>
     </div>
@@ -315,6 +337,56 @@
 
     <label class="lbl">Your data</label>
     <p><a href="#" id="c-export-md">Export transcripts (Markdown, for Claude or any AI)</a><br><a href="#" id="c-export">Download all data (JSON)</a> · <a href="#" id="c-delete" style="color:var(--red)">Delete my shelf</a></p>
+  </div>
+</div>
+
+<!-- Import from history -->
+<div id="import" class="modal" role="dialog" aria-modal="true">
+  <div class="mc" style="max-width:760px">
+    <div class="mhead"><h2 style="flex:1" id="i-title">Import from history</h2><button class="x" data-close>×</button></div>
+
+    <div id="i-sources">
+      <p class="meta">Pick from what you've already watched or listened to. Nothing is saved until you choose.</p>
+      <div class="src">
+        <div>
+          <h3>YouTube</h3>
+          <p>From your Google watch history file.</p>
+          <ol>
+            <li>Open <a href="https://takeout.google.com/settings/takeout/custom/youtube" target="_blank" rel="noopener">Google Takeout for YouTube</a>.</li>
+            <li>Under <b>All YouTube data included</b>, keep only <b>history</b>. Click <b>Next step</b> and create the export.</li>
+            <li>When Google emails it, unzip and choose <code>watch-history</code> here.</li>
+          </ol>
+          <label class="filepick"><input type="file" id="i-yt" accept=".json,.html,.htm,application/json,text/html"><span class="primary" style="display:inline-block;background:var(--ink);color:var(--plate);padding:9px 14px;border-radius:4px;font-weight:650">Choose watch-history file</span></label>
+          <p style="margin:12px 0 0">On a computer, the Chrome extension can do this instantly: <b>Pick from YouTube history</b>.</p>
+        </div>
+        <div>
+          <h3>Apple Podcasts (Mac)</h3>
+          <p>From the Podcasts library on your Mac.</p>
+          <ol>
+            <li>Quit the Podcasts app.</li>
+            <li>In Finder, choose <b>Go → Go to Folder</b> and paste:<br><code>~/Library/Group Containers/243LU875E5.groups.com.apple.podcasts/Documents</code></li>
+            <li>Choose <code>MTLibrary.sqlite</code> here.</li>
+          </ol>
+          <label class="filepick"><input type="file" id="i-pod" accept=".sqlite,.db,application/x-sqlite3,application/vnd.sqlite3"><span style="display:inline-block;background:var(--ink);color:var(--plate);padding:9px 14px;border-radius:4px;font-weight:650">Choose MTLibrary.sqlite</span></label>
+          <p style="margin:12px 0 0">The file stays on your device. Only what you pick is saved.</p>
+        </div>
+      </div>
+    </div>
+
+    <div id="i-pick" hidden>
+      <div class="pickbar">
+        <select id="i-range"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option><option value="0">Everything</option></select>
+        <input id="i-q" type="search" placeholder="Filter" style="flex:1;min-width:140px">
+        <button type="button" class="copy" id="i-all">Select all</button>
+        <button type="button" class="copy" id="i-none">Clear</button>
+      </div>
+      <ul class="picklist" id="i-list"></ul>
+      <div class="progress" id="i-progress" hidden><i></i></div>
+      <div class="mfoot">
+        <button type="button" id="i-back">Back</button>
+        <div class="row"><span class="meta" id="i-count"></span><button class="primary" id="i-save" disabled>Save to shelf</button></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -730,6 +802,130 @@ $('#m-copyt').addEventListener('click', async () => {
   const t = $('#m-transcript').value;
   if (!t) return toast('No transcript to copy', true);
   try { await navigator.clipboard.writeText(`${$('#m-title').value}\n\n${t}`); toast('Transcript copied'); } catch { toast('Copy failed', true); }
+});
+
+// ---------- Import from history ----------
+const IMPORT = { items: [], saved: new Set(), selected: new Set(), shown: [] };
+let importers;
+const loadImporters = async () => (importers ||= await import('./importers.js'));
+
+function openImport() {
+  $('#i-sources').hidden = false; $('#i-pick').hidden = true; $('#i-title').textContent = 'Import from history';
+  $('#i-yt').value = ''; $('#i-pod').value = '';
+  $('#import').classList.add('open'); document.body.style.overflow = 'hidden';
+}
+
+async function showCandidates(items, label) {
+  if (!items.length) return toast('Nothing to import in that file.', true);
+  IMPORT.items = items; IMPORT.selected = new Set();
+  try {
+    const { saved } = await api('/api/entries/exists', { method: 'POST', body: JSON.stringify({ ids: items.map(i => i.key).slice(0, 1000) }) });
+    IMPORT.saved = new Set(saved);
+  } catch { IMPORT.saved = new Set(); }
+  $('#i-title').textContent = label;
+  $('#i-sources').hidden = true; $('#i-pick').hidden = false; $('#i-progress').hidden = true;
+  $('#i-range').value = items.some(i => i.watched_at) ? '30' : '0';
+  renderCandidates();
+}
+
+function renderCandidates() {
+  const days = Number($('#i-range').value);
+  const since = days ? Date.now() - days * 86400000 : 0;
+  const q = $('#i-q').value.trim().toLowerCase();
+  IMPORT.shown = IMPORT.items.filter(i =>
+    (!since || !i.watched_at || Date.parse(i.watched_at) >= since) &&
+    (!q || `${i.title} ${i.creator}`.toLowerCase().includes(q))).slice(0, 400);
+  $('#i-list').innerHTML = IMPORT.shown.map(i => {
+    const saved = IMPORT.saved.has(i.key);
+    return `<li class="${saved ? 'saved' : ''}"><label>
+      <input type="checkbox" data-key="${esc(i.key)}" ${IMPORT.selected.has(i.key) ? 'checked' : ''} ${saved ? 'disabled' : ''}>
+      <span><span class="t">${esc(i.title)}</span><br><span class="s">${esc(i.creator || '')}</span></span>
+      <span class="when">${i.watched_at ? fmtDate(i.watched_at) : esc(i.length || '')}</span></label></li>`;
+  }).join('') || '<li class="meta" style="padding:14px 0">Nothing in this range. Try a longer one.</li>';
+  updateImportCount();
+}
+
+function updateImportCount() {
+  const n = IMPORT.selected.size;
+  $('#i-count').textContent = n ? `${n} selected` : '';
+  $('#i-save').disabled = !n;
+  $('#i-save').textContent = n ? `Save ${n} to shelf` : 'Save to shelf';
+}
+
+async function readFile(input) {
+  const f = input.files?.[0];
+  if (!f) return null;
+  if (f.size > 300 * 1024 * 1024) { toast('That file is too large.', true); return null; }
+  return f;
+}
+
+$('#btn-import').addEventListener('click', openImport);
+$('#i-back').addEventListener('click', () => { $('#i-sources').hidden = false; $('#i-pick').hidden = true; $('#i-title').textContent = 'Import from history'; });
+$('#i-range').addEventListener('change', renderCandidates);
+$('#i-q').addEventListener('input', renderCandidates);
+$('#i-all').addEventListener('click', () => { IMPORT.shown.forEach(i => { if (!IMPORT.saved.has(i.key)) IMPORT.selected.add(i.key); }); renderCandidates(); });
+$('#i-none').addEventListener('click', () => { IMPORT.selected.clear(); renderCandidates(); });
+$('#i-list').addEventListener('change', e => {
+  const k = e.target.dataset?.key; if (!k) return;
+  e.target.checked ? IMPORT.selected.add(k) : IMPORT.selected.delete(k);
+  updateImportCount();
+});
+
+$('#i-yt').addEventListener('change', async e => {
+  const f = await readFile(e.target); if (!f) return;
+  toast('Reading your history…');
+  try {
+    const { parseTakeout } = await loadImporters();
+    await showCandidates(parseTakeout(await f.text(), f.name), 'YouTube history');
+  } catch (err) { toast(err.message, true); }
+});
+
+$('#i-pod').addEventListener('change', async e => {
+  const f = await readFile(e.target); if (!f) return;
+  toast('Reading your Podcasts library…');
+  try {
+    const { applePodcastsQuery, parseApplePodcastRows } = await loadImporters();
+    if (!window.initSqlJs) await new Promise((ok, fail) => { const sc = document.createElement('script'); sc.src = 'vendor/sql-wasm.js'; sc.onload = ok; sc.onerror = () => fail(new Error('Could not load the file reader.')); document.head.appendChild(sc); });
+    const SQL = await window.initSqlJs({ locateFile: name => `vendor/${name}` });
+    const db = new SQL.Database(new Uint8Array(await f.arrayBuffer()));
+    const cols = t => { try { return db.exec(`PRAGMA table_info(${t})`)[0]?.values.map(v => v[1]) || []; } catch { return []; } };
+    const ec = cols('ZMTEPISODE'), pc = cols('ZMTPODCAST');
+    if (!ec.length) throw new Error('That isn\'t the Podcasts library. Choose MTLibrary.sqlite.');
+    const res = db.exec(applePodcastsQuery(ec, pc))[0];
+    const rows = res ? res.values.map(v => Object.fromEntries(res.columns.map((c, i) => [c, v[i]]))) : [];
+    db.close();
+    await showCandidates(parseApplePodcastRows(rows), 'Apple Podcasts history');
+  } catch (err) { toast(err.message || 'Could not read that file.', true); }
+});
+
+$('#i-save').addEventListener('click', async () => {
+  const picks = IMPORT.items.filter(i => IMPORT.selected.has(i.key));
+  if (!picks.length) return;
+  const btn = $('#i-save'); btn.disabled = true;
+  const bar = $('#i-progress'); bar.hidden = false;
+  let done = 0, failed = 0;
+  const saveOne = async i => {
+    try {
+      if (i.kind === 'podcast') {
+        await api('/api/ingest', { method: 'POST', body: JSON.stringify({
+          id: i.id, source: 'apple_podcasts', title: i.title, creator: i.creator, url: i.url, duration_sec: i.duration_sec,
+          watched_at: i.watched_at, thumbnail: i.thumbnail, transcript: i.description,
+          transcript_status: i.description ? 'description' : 'missing' }) });
+      } else {
+        await api('/api/ingest-url', { method: 'POST', body: JSON.stringify({ url: i.url, watched_at: i.watched_at }) });
+      }
+      IMPORT.saved.add(i.key); IMPORT.selected.delete(i.key);
+    } catch { failed++; }
+    done++;
+    bar.firstElementChild.style.width = `${Math.round(done / picks.length * 100)}%`;
+    btn.textContent = `Saving ${done} of ${picks.length}…`;
+  };
+  const queue = [...picks];
+  await Promise.all(Array.from({ length: 3 }, async () => { while (queue.length) await saveOne(queue.shift()); }));
+  toast(failed ? `Saved ${picks.length - failed}. ${failed} couldn't be saved; try them again.` : `Saved ${picks.length} to your shelf`, !!failed);
+  renderCandidates();
+  btn.disabled = false; updateImportCount();
+  loadMeta(); loadEntries();
 });
 
 // Deep links: #k=<key> (private link), #add=<url> (iPhone share shortcut), #open=<id> (extension)

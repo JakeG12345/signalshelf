@@ -53,7 +53,7 @@ async function sendToTab(tabId, msg) {
     return await chrome.tabs.sendMessage(tabId, msg);
   } catch {
     // Tab was open before the extension loaded: inject the content script, then retry.
-    await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['history.js', 'content.js'] });
     return chrome.tabs.sendMessage(tabId, msg);
   }
 }
@@ -72,11 +72,36 @@ async function captureTab(tabId, { auto = false } = {}) {
   return { ok: true, entry, method: extracted.method, auto };
 }
 
+// Reads the signed-in user's YouTube watch history through a youtube.com tab (same-origin, their cookies).
+async function readYouTubeHistory() {
+  let [tab] = await chrome.tabs.query({ url: 'https://www.youtube.com/*' });
+  let temp = null;
+  if (!tab) {
+    temp = await chrome.tabs.create({ url: 'https://www.youtube.com/', active: false });
+    tab = temp;
+    await new Promise(resolve => {
+      const done = (id, info) => { if (id === temp.id && info.status === 'complete') { chrome.tabs.onUpdated.removeListener(done); resolve(); } };
+      chrome.tabs.onUpdated.addListener(done);
+      setTimeout(resolve, 15000);
+    });
+  }
+  try {
+    const res = await sendToTab(tab.id, { type: 'KT_HISTORY' });
+    if (!res?.ok) throw new Error(res?.error || 'Could not read your YouTube history.');
+    return res.items;
+  } finally {
+    if (temp) chrome.tabs.remove(temp.id).catch(() => {});
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const handlers = {
     KT_CAPTURE: () => captureTab(msg.tabId),
     KT_AUTO_CAPTURE: () => captureTab(sender.tab.id, { auto: true }),
     KT_INGEST_URL: () => api('/api/ingest-url', { method: 'POST', body: JSON.stringify({ url: msg.url, status: msg.status }), timeout: 45000 }),
+    KT_HISTORY: () => readYouTubeHistory(),
+    KT_EXISTS: () => api('/api/entries/exists', { method: 'POST', body: JSON.stringify({ ids: msg.ids }) }),
+    KT_OPEN_PICKER: () => chrome.tabs.create({ url: chrome.runtime.getURL('picker.html') }).then(() => true),
     KT_HEALTH: async () => ({ ...(await api('/api/health', { timeout: 4000 })), base: (await server()).base }),
     KT_GET: () => api('/api/entries/' + encodeURIComponent(msg.id)).catch(e => (/not found/i.test(e.message) ? null : Promise.reject(e))),
     KT_RATE: () => api('/api/entries/' + encodeURIComponent(msg.id), { method: 'PATCH', body: JSON.stringify(msg.patch) })

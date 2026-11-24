@@ -148,6 +148,66 @@ await t('YouTube: transcript provider first; skipped when already saved', async 
   const c = await cap.captureLink('https://youtu.be/FFFFFFFFFFF', { fetchImpl, transcriptProvider: provider, hasTranscript: async id => id === 'yt_FFFFFFFFFFF' });
   assert.equal(calls, 1, 'hasTranscript skips the provider'); assert.equal(c.title, 'T');
 });
+await t('import: Takeout JSON (ads and removed videos skipped, newest first, de-duplicated)', async () => {
+  const imp = await import('../server/public/importers.js');
+  const json = JSON.stringify([
+    { header: 'YouTube', title: 'Watched How to price an agency', titleUrl: 'https://www.youtube.com/watch?v=AAAAAAAAAAA', subtitles: [{ name: 'Liam' }], time: '2026-11-20T10:00:00.000Z' },
+    { header: 'YouTube', title: 'Watched Some ad', titleUrl: 'https://www.youtube.com/watch?v=BBBBBBBBBBB', time: '2026-11-21T10:00:00Z', details: [{ name: 'From Google Ads' }] },
+    { header: 'YouTube', title: 'Watched a video that has been removed', time: '2026-11-22T10:00:00Z' },
+    { header: 'YouTube', title: 'Watched How to price an agency', titleUrl: 'https://www.youtube.com/watch?v=AAAAAAAAAAA', time: '2026-11-23T10:00:00Z' },
+    { header: 'YouTube Music', title: 'Watched Song', titleUrl: 'https://www.youtube.com/watch?v=CCCCCCCCCCC', time: '2026-11-19T10:00:00Z' }
+  ]);
+  const r = imp.parseTakeout(json, 'watch-history.json');
+  assert.deepEqual(r.map(i => i.key), ['yt_AAAAAAAAAAA', 'yt_CCCCCCCCCCC']);
+  assert.equal(r[0].watched_at, '2026-11-23T10:00:00.000Z'); assert.equal(r[0].title, 'How to price an agency');
+});
+await t('import: Takeout HTML (default format) incl. locale dates Safari cannot parse', async () => {
+  const imp = await import('../server/public/importers.js');
+  const cell = (id, title, ch, when, ad = false) => `<div class="outer-cell mdl-cell mdl-cell--12-col mdl-shadow--2dp"><div class="mdl-grid"><div class="header-cell mdl-cell mdl-cell--12-col"><p class="mdl-typography--title">YouTube<br></p></div><div class="content-cell mdl-cell mdl-cell--6-col mdl-typography--body-1">Watched&nbsp;<a href="https://www.youtube.com/watch?v=${id}">${title}</a><br><a href="https://www.youtube.com/channel/UCx">${ch}</a><br>${when}<br></div><div class="content-cell mdl-cell mdl-cell--6-col mdl-typography--body-1 mdl-typography--text-right"></div><div class="content-cell mdl-cell mdl-cell--12-col mdl-typography--caption"><b>Products:</b><br>&emsp;YouTube<br>${ad ? '<b>Details:</b><br>&emsp;From Google Ads<br>' : ''}</div></div></div>`;
+  const html = '<html><body><div class="mdl-grid">' + cell('DDDDDDDDDDD', 'Cold email &amp; pricing', 'Alex', '24 Nov 2026, 22:01:22 AEDT') +
+    cell('EEEEEEEEEEE', 'An ad', 'Brand', 'Nov 24, 2026, 9:00:00 PM EST', true) + cell('FFFFFFFFFFF', 'Shorts &#39;n stuff', 'Sam', 'Nov 23, 2026, 10:05:00 PM EST') + '</div></body></html>';
+  const r = imp.parseTakeout(html, 'watch-history.html');
+  assert.deepEqual(r.map(i => i.key), ['yt_DDDDDDDDDDD', 'yt_FFFFFFFFFFF']);
+  assert.equal(r[0].title, 'Cold email & pricing'); assert.equal(r[0].creator, 'Alex'); assert.equal(r[1].title, "Shorts 'n stuff");
+  const d = new Date(r[0].watched_at);
+  assert.equal(d.getFullYear(), 2026); assert.equal(d.getMonth(), 10); assert.equal(d.getDate(), 24); assert.equal(d.getHours(), 22);
+  assert.equal(new Date(imp.parseLooseDate('Nov 23, 2026, 10:05:00 PM EST')).getHours(), 22);
+  assert.equal(new Date(imp.parseLooseDate('Nov 23, 2026, 12:05:00 AM EST')).getHours(), 0);
+  assert.throws(() => imp.parseTakeout('<html>nope</html>', 'x.html'), /watch-history/);
+});
+await t('import: YouTube history page parser (app + extension copies agree)', async () => {
+  const imp = await import('../server/public/importers.js');
+  const data = { contents: { sections: [
+    { itemSectionRenderer: { contents: [{ videoRenderer: { videoId: 'GGGGGGGGGGG', title: { runs: [{ text: 'Old layout video' }] }, ownerText: { runs: [{ text: 'Chan A' }] }, lengthText: { simpleText: '12:01' } } }] } },
+    { lockupViewModel: { contentId: 'HHHHHHHHHHH', contentType: 'LOCKUP_CONTENT_TYPE_VIDEO', metadata: { lockupMetadataViewModel: { title: { content: 'New layout video' }, metadata: { contentMetadataViewModel: { metadataRows: [{ metadataParts: [{ text: { content: 'Chan B' } }] }] } } } } } },
+    { lockupViewModel: { contentId: 'PLxxxxxxxxx', contentType: 'LOCKUP_CONTENT_TYPE_PLAYLIST', metadata: { lockupMetadataViewModel: { title: { content: 'A playlist' } } } } },
+    { videoRenderer: { videoId: 'GGGGGGGGGGG', title: { runs: [{ text: 'Old layout video' }] } } }
+  ] } };
+  const app = imp.parseHistoryPage(data);
+  assert.deepEqual(app.map(i => [i.key, i.title, i.creator]), [['yt_GGGGGGGGGGG', 'Old layout video', 'Chan A'], ['yt_HHHHHHHHHHH', 'New layout video', 'Chan B']]);
+  const vm = await import('vm');
+  const ctx = vm.createContext({});
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'extension', 'history.js'), 'utf8'), ctx);
+  assert.equal(JSON.stringify(ctx.ktParseHistory(data)), JSON.stringify(app));
+});
+await t('import: Apple Podcasts library query + rows', async () => {
+  const imp = await import('../server/public/importers.js');
+  const lib = new Database(':memory:');
+  lib.exec(`CREATE TABLE ZMTPODCAST (Z_PK INTEGER PRIMARY KEY, ZTITLE TEXT, ZAUTHOR TEXT, ZIMAGEURL TEXT, ZSTORECOLLECTIONID INTEGER);
+    CREATE TABLE ZMTEPISODE (Z_PK INTEGER PRIMARY KEY, ZUUID TEXT, ZTITLE TEXT, ZPODCAST INTEGER, ZWEBPAGEURL TEXT, ZDURATION REAL,
+      ZLASTDATEPLAYED REAL, ZITEMDESCRIPTIONWITHOUTHTML TEXT, ZPLAYCOUNT INTEGER, ZSTORETRACKID INTEGER);
+    INSERT INTO ZMTPODCAST VALUES (1, 'My First Million', 'Shaan', 'https://img/x.jpg', 1469759170);
+    INSERT INTO ZMTEPISODE VALUES (1, 'U-1', 'Boring businesses', 1, NULL, 3600.4, 785000000, 'Laundromats', 1, 1000650000000);
+    INSERT INTO ZMTEPISODE VALUES (2, 'U-2', 'Never played', 1, NULL, 100, NULL, '', 0, 1);
+    INSERT INTO ZMTEPISODE VALUES (3, 'U-3', 'Older', 1, 'https://mfm.com/ep3', 50, 700000000, '', 1, 2);`);
+  const cols = tb => lib.prepare(`PRAGMA table_info(${tb})`).all().map(c => c.name);
+  const rows = lib.prepare(imp.applePodcastsQuery(cols('ZMTEPISODE'), cols('ZMTPODCAST'))).all();
+  const r = imp.parseApplePodcastRows(rows);
+  assert.deepEqual(r.map(i => i.key), ['pod_U-1', 'pod_U-3']);
+  assert.equal(r[0].url, 'https://podcasts.apple.com/podcast/id1469759170?i=1000650000000');
+  assert.equal(r[0].duration_sec, 3600); assert.equal(r[0].creator, 'My First Million'); assert.equal(r[1].url, 'https://mfm.com/ep3');
+  assert.equal(r[0].watched_at, new Date((785000000 + 978307200) * 1000).toISOString());
+});
 await t('shelf excludes notes/transcripts, escapes HTML', () => {
   dbm.updateEntry('yt_AAAAAAAAAAA', { title: 'Agency <script>alert(1)</script>', personal_notes: 'SECRET-NOTE' });
   const r = shelf.publishShelf({ minRating: 4, title: 'Test Shelf' });
@@ -211,6 +271,11 @@ await t('shelf settings + publish + served at /shelf/', async () => {
   assert.equal(p.body.count, 2);
   const html = await (await fetch(base + '/shelf/')).text();
   assert.ok(html.includes('Ryan&#39;s Shelf') && html.includes('Micro-SaaS idea validation'));
+});
+await t('exists + watched_at on ingest', async () => {
+  const r = await j('/api/ingest', { method: 'POST', body: JSON.stringify({ id: 'yt_IIIIIIIIIII', title: 'Dated', watched_at: '2026-01-02T03:04:05Z' }) });
+  assert.equal(r.body.entry.watched_at, '2026-01-02T03:04:05.000Z');
+  assert.deepEqual((await j('/api/entries/exists', { method: 'POST', body: JSON.stringify({ ids: ['yt_IIIIIIIIIII', 'yt_nope'] }) })).body.saved, ['yt_IIIIIIIIIII']);
 });
 await t('dashboard HTML served', async () => {
   assert.ok((await (await fetch(base + '/')).text()).includes('Public Shelf'));

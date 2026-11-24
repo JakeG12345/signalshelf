@@ -132,4 +132,6 @@ $('#api-save').addEventListener('click', async () => {
   location.reload();
 });
 
+$('#pick').addEventListener('click', () => { send({ type: 'KT_OPEN_PICKER' }); window.close(); });
+
 init();
