@@ -1,7 +1,7 @@
 {
   "name": "signal-shelf",
-  "version": "2.1.0",
-  "description": "Letterboxd for money-making & AI YouTube videos and podcasts: local-first tracker, Chrome extension, public shelf, and Claude MCP memory",
+  "version": "2.3.0",
+  "description": "Track the YouTube videos and podcasts you watch, with transcripts. Connect Claude, follow people, share your profile.",
   "type": "module",
   "scripts": {
     "start": "node server/index.js",
