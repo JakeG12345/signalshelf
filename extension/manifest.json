@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Signal Shelf",
-  "version": "2.2.1",
-  "description": "Save YouTube videos + transcripts to Signal Shelf (cloud or local). Optional auto-capture.",
+  "version": "2.3.0",
+  "description": "Save YouTube videos + transcripts to Signal Shelf (cloud or local). Auto-capture after 2 minutes of playback.",
   "permissions": [
     "activeTab",
     "scripting",

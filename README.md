@@ -9,7 +9,7 @@ Save what you watch and listen to with its transcript, rate it from one to five 
 | `worker/` | Cloud backend (Cloudflare Workers + D1, free tier): API, web app, live public shelf, remote MCP for Claude |
 | `server/public/` | The web app (installable on iPhone home screen) |
 | `shared/` | Logic used by both cloud and Mac: data rules, link capture (YouTube, Apple Podcasts, any page), shelf rendering |
-| `extension/` | Chrome extension: save + transcript, optional auto-capture |
+| `extension/` | Chrome extension: save + transcript, auto-capture (on by default) |
 | `server/` | Optional Mac-only version (local SQLite, Apple Podcasts library sync, stdio MCP) |
 
 ## How it works (cloud)
@@ -37,7 +37,7 @@ Transcripts: YouTube blocks most cloud servers, so the Worker gets transcripts t
 
 ## Chrome extension
 
-`chrome://extensions` → Developer mode → **Load unpacked** → `extension/`. In the popup open **Server settings** and paste the URL and key from the app's Account panel. **Auto-capture** (off by default) saves videos after N minutes of real playback.
+`chrome://extensions` → Developer mode → **Load unpacked** → `extension/`. In the popup open **Server settings** and paste the URL and key from the app's Account panel. **Auto-capture** (on by default for new installs, toggle in the popup) saves videos after 2 minutes of real playback.
 
 ## Claude tools
 

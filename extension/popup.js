@@ -43,7 +43,7 @@ function showEntry(entry) {
 }
 
 async function init() {
-  const s = await chrome.storage.sync.get({ autoCapture: false, thresholdMin: 2, apiBase: 'http://127.0.0.1:3456', apiToken: '' });
+  const s = await chrome.storage.sync.get({ autoCapture: true, thresholdMin: 2, apiBase: 'http://127.0.0.1:3456', apiToken: '' });
   $('#auto').checked = !!s.autoCapture;
   $('#threshold').value = String(s.thresholdMin);
   $('#api-base').value = s.apiBase;

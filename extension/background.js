@@ -94,6 +94,13 @@ async function readYouTubeHistory() {
   }
 }
 
+// New installs: auto-capture on (2 min of playback). Respect a choice already synced from another device.
+chrome.runtime.onInstalled.addListener(async ({ reason }) => {
+  if (reason !== 'install') return;
+  const { autoCapture } = await chrome.storage.sync.get('autoCapture');
+  if (autoCapture === undefined) await chrome.storage.sync.set({ autoCapture: true, thresholdMin: 2 });
+});
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const handlers = {
     KT_CAPTURE: () => captureTab(msg.tabId),

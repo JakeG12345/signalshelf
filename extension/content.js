@@ -184,7 +184,7 @@
   });
 
   // ---------- Auto-capture ----------
-  const settings = { autoCapture: false, thresholdMin: 2 };
+  const settings = { autoCapture: true, thresholdMin: 2, apiBase: '', apiToken: '' };
   chrome.storage.sync.get(settings, s => Object.assign(settings, s));
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'sync') return;
@@ -226,6 +226,8 @@
 
   async function maybeAutoCapture(video) {
     if (!settings.autoCapture || watch.saved || watch.busy || !watch.id) return;
+    // Not connected yet (no key, no custom server): stay quiet instead of failing on every video.
+    if (!settings.apiToken && !settings.apiBase) return;
     const threshold = Math.max(0.5, Number(settings.thresholdMin) || 2) * 60;
     const dur = video.duration;
     // Short videos: count as watched at 90% if they are shorter than the threshold.

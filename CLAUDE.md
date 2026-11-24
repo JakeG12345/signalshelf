@@ -19,7 +19,7 @@ Owner: Ryan (GitHub JakeG12345). Built as day 1 of a "launch a product every day
 | `worker/` | **Production backend**: Cloudflare Worker + D1. `src/index.js` routes, `store.js` (D1, schema + migrations in `ensureSchema`), `accounts.js` (guest accounts, passwords, sessions, follows, feed, people, rate limits), `mcp.js` (remote MCP, Streamable HTTP, JSON responses), `landing.js`, `transcripts.js` (Supadata). |
 | `server/public/` | The web app (single `index.html`, inline CSS/JS) + PWA manifest/icons, `importers.js` (Takeout / YouTube history / Apple Podcasts parsers), `vendor/sql-wasm.*` (sql.js for reading MTLibrary.sqlite on-device). Served by the Worker at `/app/`. |
 | `shared/` | Code used by both the Worker and the Mac server: `core.js` (all entry SQL builders, normalisers, `userId`-scoped variants), `capture.js` + `youtube.js` (link capture), `theme.js` (design tokens, signal-bars, logo), `profile-render.js`, `shelf-render.js`. |
-| `extension/` | Chrome MV3 extension: save + transcript (caption files, then YouTube's transcript panel), optional auto-capture, "Pick from YouTube history" (`picker.html`), server URL + key settings. |
+| `extension/` | Chrome MV3 extension: save + transcript (caption files, then YouTube's transcript panel), auto-capture (on by default for new installs, 2 min), "Pick from YouTube history" (`picker.html`), server URL + key settings. |
 | `server/` | Optional Mac-only version: Express + better-sqlite3, Apple Podcasts library sync, stdio MCP. Secondary; keep it working but don't prioritise it. |
 
 ## Commands
@@ -51,7 +51,6 @@ Hi-fi faceplate look: plate `#E6E8E2`, panel `#F4F5F0`, ink `#15171A`, mute `#5F
 
 ## Open ideas (ask Ryan before starting)
 
-1. Chrome extension auto-capture on by default.
 2. One-tap iPhone Shortcut install link (generic shortcut using `/app/#add=`).
 3. Share image (OG card) for profiles, for posting on X.
 4. Password reset by email (needs an email provider such as Resend + a domain).
