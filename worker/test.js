@@ -6,6 +6,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import http from 'http';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const PORT = 8790 + Math.floor(Math.random() * 100);
@@ -230,6 +231,116 @@ try {
     assert.equal((await j('/api/entries', { headers: as(B) })).status, 401);
     assert.equal((await j('/api/entries', { headers: as(A) })).status, 200, 'A unaffected');
   });
+
+  await t('Google sign-in is hidden when not configured', async () => {
+    assert.equal((await j('/api/meta', { headers: as(A) })).body.googleSignIn, false);
+    assert.equal((await j('/api/auth/google/start', { method: 'POST' })).status, 404);
+  });
+
+  // ---------- Google sign-in, against a local mock of Google's token endpoint ----------
+  const mock = http.createServer((req, res) => {
+    let body = ''; req.on('data', d => (body += d)).on('end', () => {
+      const p = new URLSearchParams(body);
+      if (p.get('client_secret') !== 'test-secret' || p.get('grant_type') !== 'authorization_code' || !p.get('redirect_uri').endsWith('/auth/google/callback')) {
+        res.writeHead(400); return res.end('{"error":"invalid_client"}');
+      }
+      const claims = { iss: 'https://accounts.google.com', aud: 'test-client', email_verified: true, exp: Math.floor(Date.now() / 1000) + 3600,
+        ...JSON.parse(Buffer.from(p.get('code'), 'base64url').toString()) };
+      const enc = o => Buffer.from(JSON.stringify(o)).toString('base64url');
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ id_token: `${enc({ alg: 'RS256' })}.${enc(claims)}.sig`, access_token: 'x' }));
+    });
+  });
+  await new Promise(r => mock.listen(0, '127.0.0.1', r));
+  const GPORT = PORT + 200;
+  const gbase = `http://127.0.0.1:${GPORT}`;
+  const gpersist = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-d1g-'));
+  const wg = spawn('npx', ['wrangler', 'dev', '--local', '--port', String(GPORT), '--ip', '127.0.0.1', '--persist-to', gpersist,
+    '--var', 'GOOGLE_CLIENT_ID:test-client', '--var', 'GOOGLE_CLIENT_SECRET:test-secret',
+    '--var', `GOOGLE_TOKEN_URL:http://127.0.0.1:${mock.address().port}/token`, '--show-interactive-dev-session=false'],
+  { cwd: DIR, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false', NO_PROXY: '127.0.0.1,localhost' } });
+  let glog = ''; wg.stdout.on('data', d => (glog += d)); wg.stderr.on('data', d => (glog += d));
+  try {
+    for (let i = 0; i < 120; i++) {
+      try { if ((await fetch(gbase + '/api/health')).ok) break; } catch { /* starting */ }
+      await new Promise(r => setTimeout(r, 500));
+      if (i === 119) throw new Error('second wrangler dev did not start:\n' + glog);
+    }
+    const g = async (p, o = {}) => {
+      const r = await fetch(gbase + p, { ...o, headers: { 'Content-Type': 'application/json', ...(o.headers || {}) } });
+      return { status: r.status, body: await r.json() };
+    };
+    const startFlow = async key => {
+      const r = await g('/api/auth/google/start', { method: 'POST', headers: { ...(key ? as(key) : {}), ...ip(50) } });
+      assert.equal(r.status, 200);
+      const u = new URL(r.body.url);
+      assert.equal(u.origin + u.pathname, 'https://accounts.google.com/o/oauth2/v2/auth');
+      assert.equal(u.searchParams.get('scope'), 'openid email profile');
+      assert.equal(u.searchParams.get('redirect_uri'), `${gbase}/auth/google/callback`);
+      assert.equal(u.searchParams.get('client_id'), 'test-client');
+      return u.searchParams.get('state');
+    };
+    const callback = async (state, claims) => {
+      const code = Buffer.from(JSON.stringify(claims)).toString('base64url');
+      const r = await fetch(`${gbase}/auth/google/callback?state=${encodeURIComponent(state)}&code=${code}`, { redirect: 'manual' });
+      assert.equal(r.status, 302);
+      const loc = new URL(r.headers.get('location'));
+      assert.equal(loc.pathname, '/app/');
+      return new URLSearchParams(loc.hash.slice(1));
+    };
+    const me = async key => (await g('/api/meta', { headers: as(key) })).body;
+
+    await t('Google: meta flag on when configured', async () => {
+      const guest = (await g('/api/auth/anon', { method: 'POST', headers: ip(51) })).body.key;
+      assert.equal((await me(guest)).googleSignIn, true);
+    });
+    let newKey;
+    await t('Google: new user gets an account with an auto username', async () => {
+      const h = await callback(await startFlow(null), { sub: 'g-1', email: 'ada.l@example.com', name: 'Ada Lovelace' });
+      assert.equal(h.get('google'), 'new');
+      newKey = h.get('k');
+      const m = await me(newKey);
+      assert.equal(m.user.handle, 'adalovelace'); assert.equal(m.user.display_name, 'Ada Lovelace');
+      assert.equal(m.user.has_password, true); assert.equal(m.user.has_google, true);
+    });
+    await t('Google: a guest shelf becomes the account, items kept', async () => {
+      const guest = (await g('/api/auth/anon', { method: 'POST', headers: ip(52) })).body.key;
+      await g('/api/ingest', { method: 'POST', headers: as(guest), body: JSON.stringify({ id: 'web_g', title: 'Guest item', url: 'https://example.com/g' }) });
+      const h = await callback(await startFlow(guest), { sub: 'g-2', email: 'ada@example.com', name: 'Ada Lovelace' });
+      assert.equal(h.get('google'), 'upgrade');
+      const m = await me(h.get('k'));
+      assert.equal(m.user.handle, 'ada', 'taken name falls back to the email');
+      assert.equal(m.stats.total, 1);
+      assert.equal((await me(guest)).user.id, m.user.id, 'same shelf');
+      const ch = await g('/api/me', { method: 'PUT', headers: as(h.get('k')), body: JSON.stringify({ handle: 'ada_l' }) });
+      assert.equal(ch.body.user.handle, 'ada_l', 'Google users can change their username');
+    });
+    await t('Google: returning login opens the same account, not the guest', async () => {
+      const guest = (await g('/api/auth/anon', { method: 'POST', headers: ip(53) })).body.key;
+      const h = await callback(await startFlow(guest), { sub: 'g-1', email: 'ada.l@example.com', name: 'Ada Lovelace' });
+      assert.equal(h.get('google'), 'login');
+      assert.equal((await me(h.get('k'))).user.handle, 'adalovelace');
+      assert.equal((await me(guest)).user.has_google, false, 'guest untouched');
+    });
+    await t('Google: bad, reused and unverified states are rejected', async () => {
+      let h = await callback('nope', { sub: 'g-9', email: 'x@example.com' });
+      assert.ok(h.has('account') && /expired/.test(h.get('error')));
+      const st = await startFlow(null);
+      await callback(st, { sub: 'g-3', email: 'b@example.com', name: 'Bo' });
+      h = await callback(st, { sub: 'g-4', email: 'c@example.com' });
+      assert.ok(/expired/.test(h.get('error')), 'state is single use');
+      h = await callback(await startFlow(null), { sub: 'g-5', email: 'd@example.com', email_verified: false });
+      assert.ok(/Verify/.test(h.get('error')));
+      h = await callback(await startFlow(null), { sub: 'g-6', email: 'e@example.com', aud: 'someone-else' });
+      assert.ok(h.has('error') && !h.has('k'));
+      const bo = await callback(await startFlow(null), { sub: 'g-3', email: 'b@example.com', name: 'Bo' });
+      assert.match((await me(bo.get('k'))).user.handle, /^user\d{4}$/, 'names too short fall back to a valid handle');
+    });
+  } finally {
+    wg.kill('SIGINT'); setTimeout(() => wg.kill('SIGKILL'), 2000);
+    mock.close();
+    fs.rmSync(gpersist, { recursive: true, force: true });
+  }
 } finally {
   wr.kill('SIGINT');
   setTimeout(() => wr.kill('SIGKILL'), 2000);

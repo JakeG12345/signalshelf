@@ -312,6 +312,10 @@
     <div class="mhead"><h2 style="margin:0;flex:1">Account</h2><button class="x" data-close>×</button></div>
     <p class="meta" id="a-who"></p>
 
+    <div id="a-google" hidden>
+      <button class="primary" type="button" id="a-google-btn" style="width:100%;margin-top:8px">Continue with Google</button>
+    </div>
+
     <div id="a-signup">
       <label class="lbl">Create your account</label>
       <p class="meta" style="margin-top:0">Keep this shelf, log in anywhere, and get a public profile others can follow. Free.</p>
@@ -338,6 +342,7 @@
       </div>
       <label class="lbl">Your profile</label>
       <form id="profileform">
+        <input id="p-handle" placeholder="Username" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="username" maxlength="21" style="width:100%;margin-bottom:8px">
         <div class="grid2">
           <input id="p-name" placeholder="Display name" maxlength="60" autocomplete="name">
           <input id="p-bio" placeholder="One line about you" maxlength="160">
@@ -843,6 +848,8 @@ function openAccount(focusLogin = false) {
   $('#a-signup').hidden = hasAccount;
   $('#a-login').hidden = hasAccount;
   $('#a-signedin').hidden = !hasAccount;
+  $('#a-google').hidden = hasAccount || !META.googleSignIn;
+  $('#p-handle').value = u.handle || '';
   $('#a-handle').textContent = u.handle ? '@' + u.handle : '';
   $('#su-handle').value = u.handle || '';
   $('#p-name').value = u.display_name || '';
@@ -876,11 +883,23 @@ $('#signupform').addEventListener('submit', async e => {
   } catch (err) { toast(err.message, true); }
 });
 
+const confirmLeaveGuest = () => {
+  const items = META.stats?.total || 0;
+  return !(items && !META.user?.has_password &&
+    !confirm(`This guest shelf has ${items} item${items === 1 ? '' : 's'}. Logging in switches to your account, and this guest shelf will only be reachable through its private link. Continue?`));
+};
+$('#a-google-btn').addEventListener('click', async () => {
+  // A new Google account takes over this guest shelf; only an existing account would leave it behind.
+  if (!confirmLeaveGuest()) return;
+  try {
+    const r = await api('/api/auth/google/start', { method: 'POST' });
+    location.href = r.url;
+  } catch (err) { toast(err.message, true); }
+});
+
 $('#loginform').addEventListener('submit', async e => {
   e.preventDefault();
-  const items = META.stats?.total || 0;
-  if (items && !META.user?.has_password &&
-      !confirm(`This guest shelf has ${items} item${items === 1 ? '' : 's'}. Logging in switches to your account, and this guest shelf will only be reachable through its private link. Continue?`)) return;
+  if (!confirmLeaveGuest()) return;
   try {
     const res = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ handle: $('#li-handle').value.trim(), password: $('#li-pass').value }) });
@@ -1067,8 +1086,11 @@ $('#a-viewprofile').addEventListener('click', e => { e.preventDefault(); if (MET
 $('#profileform').addEventListener('submit', async e => {
   e.preventDefault();
   const patch = { display_name: $('#p-name').value, bio: $('#p-bio').value, is_private: $('#p-private').checked };
-  Object.assign(META.user, patch); toast('Profile saved');
-  sync('/api/me', { method: 'PUT', body: JSON.stringify(patch) }, () => loadMeta());
+  const handle = $('#p-handle').value.trim().replace(/^@/, '').toLowerCase();
+  if (handle && handle !== META.user.handle) patch.handle = handle;
+  const before = { ...META.user };
+  Object.assign(META.user, patch); $('#a-handle').textContent = '@' + META.user.handle; toast('Profile saved');
+  sync('/api/me', { method: 'PUT', body: JSON.stringify(patch) }, () => { META.user = before; $('#p-handle').value = before.handle || ''; loadMeta(); });
 });
 
 let VIEW = 'mine';
@@ -1136,20 +1158,21 @@ async function followFromLink(handle) {
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
   return { k: p.get('k'), add: p.get('add'), open: p.get('open'), login: p.has('login') ? '1' : null,
-    follow: p.get('follow'), account: p.has('account') ? '1' : null };
+    follow: p.get('follow'), account: p.has('account') ? '1' : null, error: p.get('error'), google: p.get('google') };
 }
 
 async function handleHash() {
-  const { k, add, open, login, follow, account } = readHash();
-  if ((login || account) && META.mode === 'cloud') { history.replaceState(null, '', location.pathname); return openAccount(!!login); }
+  const { k, add, open, login, follow, account, error, google } = readHash();
+  if ((login || account) && META.mode === 'cloud') { history.replaceState(null, '', location.pathname); openAccount(!!login); if (error) toast(error, true); return; }
   if (follow && META.mode === 'cloud') { history.replaceState(null, '', location.pathname); return followFromLink(follow); }
-  if (!k && !add && !open) return;
+  if (!k && !add && !open && !google) return;
   history.replaceState(null, '', location.pathname);
   if (k && keyFromInput(k) && k !== getToken()) {
     setToken(keyFromInput(k));
     await Promise.all([loadMeta(), loadEntries()]);
     toast('Signed in to your shelf on this device');
   }
+  if (google) toast(google === 'login' ? `Logged in as @${META.user?.handle}` : `Account created. Welcome, @${META.user?.handle}!`);
   if (open) return openItem(open);
   if (add) {
     toast('Saving…');

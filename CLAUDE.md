@@ -26,11 +26,11 @@ Owner: Ryan (GitHub JakeG12345). Built as day 1 of a "launch a product every day
 
 ```bash
 npm ci && npm test                         # 33 checks: shared logic, importers, local server, stdio MCP
-cd worker && npm ci && npm test            # 20 checks: multi-user Worker under wrangler dev + remote MCP (official SDK client)
+cd worker && npm ci && npm test            # 26 checks: multi-user Worker under wrangler dev + remote MCP + Google sign-in (mock token server)
 cd worker && npm run dev                   # local cloud dev server
 ```
 
-Both suites must pass before pushing. CI (`.github/workflows/deploy.yml`) runs them on every push and deploys `main` to Cloudflare. Secrets live in the GitHub `production` environment: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `SUPADATA_API_KEY`. The workflow creates/finds the D1 database `signalshelf` and patches its id into `wrangler.toml`.
+Both suites must pass before pushing. CI (`.github/workflows/deploy.yml`) runs them on every push and deploys `main` to Cloudflare. Secrets live in the GitHub `production` environment: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `SUPADATA_API_KEY`, `GOOGLE_CLIENT_SECRET`. The workflow creates/finds the D1 database `signalshelf` and patches its id into `wrangler.toml`.
 
 Check a deploy: `curl -s https://api.github.com/repos/JakeG12345/signalshelf/actions/runs?per_page=1`.
 
@@ -42,7 +42,7 @@ Check a deploy: `curl -s https://api.github.com/repos/JakeG12345/signalshelf/act
 - **Instant UI:** the app updates the screen first and syncs in the background with rollback (`sync()`, `replaceCard()`, cached first paint). Keep new interactions optimistic.
 - **Transcripts:** YouTube blocks cloud IPs, so the Worker uses Supadata (`mode=native`, 1 credit per new video; skipped when a transcript already exists). Free plan = 100/month; transcripts are free for users for now. When credits run out, saves continue without a transcript.
 - **No history APIs exist:** YouTube removed watch history from its API in 2016; Apple Podcasts has no API. History import = Chrome extension (live), Google Takeout file, or the Mac Podcasts library file.
-- **Accounts:** guests get a key instantly (no sign-up); sign-up adds username + password (PBKDF2, 25k iterations for Workers CPU limits) and makes a public profile (private toggle available). Keys are stored hashed; the private link `/app/#k=<key>` signs a device in.
+- **Accounts:** guests get a key instantly (no sign-up); sign-up adds username + password (PBKDF2, 25k iterations for Workers CPU limits) or "Continue with Google" (OAuth code flow, `users.google_sub`, `oauth_states`; auto username; guest shelf is upgraded in place) and makes a public profile (private toggle available). Keys are stored hashed; the private link `/app/#k=<key>` signs a device in.
 - **Rate limits** live in D1 (`rateLimit`): guest creation per IP, saves per day, writes per hour, logins, items per user (5000).
 
 ## Design

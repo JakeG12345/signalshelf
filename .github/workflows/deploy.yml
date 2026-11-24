@@ -81,7 +81,13 @@ jobs:
       - name: Set optional secrets
         env:
           SUPADATA_API_KEY: ${{ secrets.SUPADATA_API_KEY }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
         run: |
+          if [ -n "$GOOGLE_CLIENT_SECRET" ]; then
+            printf '%s' "$GOOGLE_CLIENT_SECRET" | npx wrangler secret put GOOGLE_CLIENT_SECRET
+          else
+            echo "::warning::GOOGLE_CLIENT_SECRET not set: Google sign-in stays hidden."
+          fi
           if [ -n "$SUPADATA_API_KEY" ]; then
             printf '%s' "$SUPADATA_API_KEY" | npx wrangler secret put SUPADATA_API_KEY
           else

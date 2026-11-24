@@ -71,6 +71,11 @@ export const CLOUD_SCHEMA_SQL = [
     bucket TEXT PRIMARY KEY,
     count INTEGER NOT NULL,
     reset_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS oauth_states (
+    state TEXT PRIMARY KEY,
+    user_id TEXT,
+    created_at INTEGER NOT NULL
   )`
 ];
 
@@ -91,9 +96,10 @@ export function ensureSchema(db) {
       await db.batch(CLOUD_SCHEMA_SQL.map(sql => db.prepare(sql)));
       // Columns added after launch
       const userCols = ((await db.prepare('PRAGMA table_info(users)').all()).results || []).map(c => c.name);
-      const add = [['password_hash', 'TEXT'], ['password_salt', 'TEXT'], ['bio', 'TEXT'], ['is_private', 'INTEGER DEFAULT 0']]
+      const add = [['password_hash', 'TEXT'], ['password_salt', 'TEXT'], ['bio', 'TEXT'], ['is_private', 'INTEGER DEFAULT 0'], ['google_sub', 'TEXT']]
         .filter(([c]) => !userCols.includes(c));
       if (add.length) await db.batch(add.map(([c, t]) => db.prepare(`ALTER TABLE users ADD COLUMN ${c} ${t}`)));
+      await db.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub)').run();
     })().catch(err => { schemaReady = null; throw err; });
   }
   return schemaReady;

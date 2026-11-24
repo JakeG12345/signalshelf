@@ -62,13 +62,14 @@ export async function createAnonymousUser(db, request, limits) {
 export async function resolveUser(db, key) {
   if (!looksLikeKey(key)) return null;
   const hash = await sha256Hex(key);
-  const cols = 'u.id, u.handle, u.display_name, u.bio, u.is_private, u.created_at, u.last_seen_at, (u.password_hash IS NOT NULL) AS has_password';
+  const cols = 'u.id, u.handle, u.display_name, u.bio, u.is_private, u.created_at, u.last_seen_at, (u.password_hash IS NOT NULL OR u.google_sub IS NOT NULL) AS has_password, (u.google_sub IS NOT NULL) AS has_google';
   let user = await db.prepare(`SELECT ${cols}, 0 AS via_session FROM users u WHERE u.key_hash = ?`).bind(hash).first();
   if (!user) {
     user = await db.prepare(`SELECT ${cols}, 1 AS via_session FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.key_hash = ?`).bind(hash).first();
   }
   if (!user) return null;
   user.has_password = !!user.has_password;
+  user.has_google = !!user.has_google;
   user.is_private = !!user.is_private;
   user.via_session = !!user.via_session;
   const today = new Date().toISOString().slice(0, 10);
@@ -260,4 +261,99 @@ export async function login(db, request, { handle, password }) {
 /** Ends this device's login session (the shelf's own private key can't be logged out, only replaced). */
 export async function logout(db, key) {
   await db.prepare('DELETE FROM sessions WHERE key_hash = ?').bind(await sha256Hex(key)).run();
+}
+
+// ---------- Google sign-in (server-side OAuth code flow) ----------
+const STATE_TTL_SEC = 600;
+export const googleEnabled = env => !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
+
+async function newSession(db, userId) {
+  const key = `ss_${randomString(32)}`;
+  const now = new Date().toISOString();
+  await db.prepare('INSERT INTO sessions (key_hash, user_id, created_at, last_used_at) VALUES (?, ?, ?, ?)')
+    .bind(await sha256Hex(key), userId, now, now).run();
+  return key;
+}
+
+/** Starts sign-in: stores a single-use state (linked to the current guest, if any) and returns Google's URL. */
+export async function googleStart(db, request, env, origin, user) {
+  if (!googleEnabled(env)) throw new HttpError(404, 'Google sign-in is not set up.');
+  const ipHash = (await sha256Hex(`ip:${request.headers.get('CF-Connecting-IP') || 'unknown'}`)).slice(0, 24);
+  await rateLimit(db, `gstart:${ipHash}`, 30, 900, 'Too many sign-in attempts. Wait 15 minutes and try again.');
+  const now = Math.floor(Date.now() / 1000);
+  await db.prepare('DELETE FROM oauth_states WHERE created_at < ?').bind(now - STATE_TTL_SEC).run();
+  const state = randomString(40);
+  await db.prepare('INSERT INTO oauth_states (state, user_id, created_at) VALUES (?, ?, ?)').bind(state, user?.id || null, now).run();
+  const q = new URLSearchParams({
+    client_id: env.GOOGLE_CLIENT_ID, redirect_uri: `${origin}/auth/google/callback`, response_type: 'code',
+    scope: 'openid email profile', state, prompt: 'select_account'
+  });
+  return `${env.GOOGLE_AUTH_URL || 'https://accounts.google.com/o/oauth2/v2/auth'}?${q}`;
+}
+
+function decodeJwtPayload(jwt) {
+  const part = String(jwt || '').split('.')[1];
+  if (!part) throw new HttpError(400, 'Google sign-in failed.');
+  const b = part.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(b + '='.repeat((4 - (b.length % 4)) % 4));
+  return JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0))));
+}
+
+/** A free, valid username from the Google name or email. */
+async function autoHandle(db, claims) {
+  const bases = [claims.name, claims.given_name, String(claims.email || '').split('@')[0]]
+    .map(v => String(v || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9_]+/g, '').slice(0, 15));
+  const free = async h => { try { normalizeHandle(h); } catch { return false; } return !(await db.prepare('SELECT 1 FROM users WHERE handle = ?').bind(h).first()); };
+  for (const b of bases) if (b.length >= 3 && await free(b)) return b;
+  const base = (bases.find(b => b.length >= 3) || 'user').slice(0, 15);
+  for (let i = 0; i < 20; i++) {
+    const h = `${base}${Math.floor(Math.random() * 9000) + 1000}`;
+    if (await free(h)) return h;
+  }
+  return `user${randomString(8).toLowerCase().replace(/[^a-z0-9]/g, '0')}`;
+}
+
+/** Handles Google's redirect. Returns a new session key for this device. */
+export async function googleCallback(db, request, env, origin, params) {
+  if (!googleEnabled(env)) throw new HttpError(404, 'Google sign-in is not set up.');
+  if (params.get('error')) throw new HttpError(400, 'Google sign-in was cancelled.');
+  const state = params.get('state') || '';
+  const code = params.get('code') || '';
+  const row = state ? await db.prepare('DELETE FROM oauth_states WHERE state = ? RETURNING user_id, created_at').bind(state).first() : null;
+  if (!row || row.created_at < Math.floor(Date.now() / 1000) - STATE_TTL_SEC) throw new HttpError(400, 'That sign-in link expired. Try again.');
+  if (!code) throw new HttpError(400, 'Google sign-in failed.');
+
+  const res = await fetch(env.GOOGLE_TOKEN_URL || 'https://oauth2.googleapis.com/token', {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ code, client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: `${origin}/auth/google/callback`, grant_type: 'authorization_code' })
+  });
+  const tok = await res.json().catch(() => ({}));
+  if (!res.ok || !tok.id_token) throw new HttpError(400, 'Google sign-in failed.');
+  // The id_token came straight from Google's token endpoint over TLS, so its claims can be read without a signature check.
+  const c = decodeJwtPayload(tok.id_token);
+  const audOk = Array.isArray(c.aud) ? c.aud.includes(env.GOOGLE_CLIENT_ID) : c.aud === env.GOOGLE_CLIENT_ID;
+  const issOk = c.iss === 'https://accounts.google.com' || c.iss === 'accounts.google.com';
+  if (!audOk || !issOk || !c.sub || (c.exp && c.exp * 1000 < Date.now() - 60000)) throw new HttpError(400, 'Google sign-in failed.');
+  if (c.email_verified !== true && c.email_verified !== 'true') throw new HttpError(400, 'Verify your Google email first.');
+  const sub = String(c.sub);
+
+  const existing = await db.prepare('SELECT id FROM users WHERE google_sub = ?').bind(sub).first();
+  if (existing) return { key: await newSession(db, existing.id), userId: existing.id, kind: 'login' };
+
+  const name = String(c.name || '').replace(/\s+/g, ' ').trim().slice(0, 60) || null;
+  const guest = row.user_id
+    ? await db.prepare('SELECT id, handle, display_name FROM users WHERE id = ? AND password_hash IS NULL AND google_sub IS NULL').bind(row.user_id).first()
+    : null;
+  if (guest) {
+    const handle = guest.handle || await autoHandle(db, c);
+    await db.prepare('UPDATE users SET google_sub = ?, handle = ?, display_name = COALESCE(display_name, ?) WHERE id = ?')
+      .bind(sub, handle, name, guest.id).run();
+    return { key: await newSession(db, guest.id), userId: guest.id, kind: 'upgrade' };
+  }
+  const id = `u_${randomString(14)}`;
+  const now = new Date().toISOString();
+  await db.prepare('INSERT INTO users (id, key_hash, handle, display_name, created_at, last_seen_at, google_sub) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .bind(id, await sha256Hex(`ss_${randomString(32)}`), await autoHandle(db, c), name, now, now, sub).run();
+  return { key: await newSession(db, id), userId: id, kind: 'new' };
 }

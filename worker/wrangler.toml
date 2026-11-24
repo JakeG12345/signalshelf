@@ -20,6 +20,8 @@ database_id = "00000000-0000-0000-0000-000000000000"
 [vars]
 # iCloud link of the generic "Save to Signal Shelf" Shortcut (opens /app/#add=<url>). Empty = manual steps only.
 SHORTCUT_ICLOUD_URL = ""
+# Google sign-in: OAuth client ID (public). GOOGLE_CLIENT_SECRET is a secret set by the deploy workflow. Both needed to show the button.
+GOOGLE_CLIENT_ID = ""
 
 [observability]
 enabled = true

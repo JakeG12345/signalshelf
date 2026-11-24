@@ -9,7 +9,7 @@ import { ensureSchema, createStore } from './store.js';
 import { handleMcp } from './mcp.js';
 import { renderLanding, renderNotFound } from './landing.js';
 import { renderProfileHtml, renderPeopleHtml, publicItem } from '../../shared/profile-render.js';
-import { createAnonymousUser, resolveUser, updateProfile, listPeople, topSignal, userByHandle, followCounts, setFollow, isFollowing, listFollowing, feed, rateLimit, looksLikeKey, createAccount, changePassword, login, logout } from './accounts.js';
+import { createAnonymousUser, resolveUser, updateProfile, listPeople, topSignal, userByHandle, followCounts, setFollow, isFollowing, listFollowing, feed, rateLimit, looksLikeKey, createAccount, changePassword, login, logout, googleEnabled, googleStart, googleCallback } from './accounts.js';
 import { captureLink } from '../../shared/capture.js';
 import { supadataProvider } from './transcripts.js';
 import { APP_VERSION, MONETIZATION_MODELS, SOURCES, STATUSES, HttpError } from '../../shared/core.js';
@@ -121,6 +121,7 @@ async function privateApi(request, url, ctx) {
     return json({
       mode: 'cloud', version: APP_VERSION, user,
       capabilities: { podcastsSync: false, shelfLive: true, accounts: true, social: true },
+      googleSignIn: googleEnabled(env),
       shelfUrl: user.handle ? `${url.origin}/u/${user.handle}` : null,
       profileUrl: user.handle ? `${url.origin}/u/${user.handle}` : null,
       follow: await followCounts(db, user.id),
@@ -307,6 +308,20 @@ export default {
       }
       if (path === '/api/auth/login' && request.method === 'POST') {
         return json(await login(db, request, await readJson(request)));
+      }
+      if (path === '/api/auth/google/start' && request.method === 'POST') {
+        const user = await resolveUser(db, bearer(request));
+        return json({ url: await googleStart(db, request, env, url.origin, user) });
+      }
+      if (path === '/auth/google/callback' && request.method === 'GET') {
+        try {
+          const { key, kind } = await googleCallback(db, request, env, url.origin, url.searchParams);
+          return Response.redirect(`${url.origin}/app/#k=${key}&google=${kind}`, 302);
+        } catch (err) {
+          if (!err.status || err.status >= 500) console.error(err);
+          const msg = err.status && err.status < 500 ? err.message : 'Google sign-in failed. Try again.';
+          return Response.redirect(`${url.origin}/app/#account&error=${encodeURIComponent(msg)}`, 302);
+        }
       }
       if (path === '/api/auth/anon' && request.method === 'POST') {
         return json(await createAnonymousUser(db, request, limits), 201);
