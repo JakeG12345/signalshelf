@@ -191,3 +191,20 @@ export async function login(db, request, { handle, password }) {
 export async function logout(db, key) {
   await db.prepare('DELETE FROM sessions WHERE key_hash = ?').bind(await sha256Hex(key)).run();
 }
+
+/** Items that appear on published shelves, ranked by how many shelves carry them. Only already-public data. */
+export async function topSignal(db, limit = 6) {
+  const { results } = await db.prepare(`
+    SELECT e.id, MAX(e.title) AS title, MAX(e.creator) AS creator, MAX(e.url) AS url,
+           COUNT(*) AS shelves, ROUND(AVG(e.signal_rating), 1) AS avg
+    FROM entries e
+    JOIN users u ON u.id = e.user_id AND u.handle IS NOT NULL
+    JOIN user_settings s ON s.user_id = u.id AND s.key = 'shelf' AND json_extract(s.value, '$.published') = 1
+    WHERE e.signal_rating >= COALESCE(json_extract(s.value, '$.minRating'), 4)
+      AND e.url LIKE 'https://%'
+      AND NOT (e.source = 'youtube' AND COALESCE(json_extract(s.value, '$.includeYoutube'), 1) = 0)
+      AND NOT (e.source = 'apple_podcasts' AND COALESCE(json_extract(s.value, '$.includePodcasts'), 1) = 0)
+      AND NOT (e.source NOT IN ('youtube', 'apple_podcasts') AND COALESCE(json_extract(s.value, '$.includeLinks'), 1) = 0)
+    GROUP BY e.id ORDER BY shelves DESC, avg DESC, MAX(e.updated_at) DESC LIMIT ?`).bind(limit).all();
+  return results;
+}

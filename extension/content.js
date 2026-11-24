@@ -196,13 +196,13 @@
       el = document.createElement('div');
       el.id = 'kt-toast';
       Object.assign(el.style, {
-        position: 'fixed', right: '20px', bottom: '20px', zIndex: 2147483647, padding: '10px 14px', borderRadius: '8px',
-        background: '#14181c', color: '#e6ebf0', font: '13px/1.4 -apple-system, Roboto, sans-serif',
+        position: 'fixed', right: '20px', bottom: '20px', zIndex: 2147483647, padding: '10px 14px', borderRadius: '4px',
+        background: '#15171A', color: '#E6E8E2', font: '13px/1.4 -apple-system, Roboto, sans-serif',
         boxShadow: '0 6px 24px rgba(0,0,0,.35)', transition: 'opacity .25s', maxWidth: '320px'
       });
       document.documentElement.appendChild(el);
     }
-    el.style.border = `1px solid ${isErr ? '#f05454' : '#00c030'}`;
+    el.style.border = `1px solid ${isErr ? '#B3261E' : '#5B70FF'}`;
     el.textContent = text;
     el.style.opacity = '1';
     clearTimeout(el._t);

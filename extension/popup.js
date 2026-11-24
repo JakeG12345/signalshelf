@@ -1,6 +1,6 @@
 const $ = s => document.querySelector(s);
 const send = msg => chrome.runtime.sendMessage(msg).catch(e => ({ ok: false, error: e.message }));
-const LABELS = ['', 'Noise', 'Meh', 'Useful', 'High signal', 'Must watch'];
+const LABELS = ['', 'Noise', 'Thin', 'Useful', 'High signal', 'Must watch'];
 let tab = null;
 let entryId = null;
 
@@ -12,21 +12,21 @@ function renderStars(rating) {
   el.innerHTML = '';
   for (let n = 1; n <= 5; n++) {
     const b = document.createElement('button');
-    b.textContent = '★';
     b.title = LABELS[n];
+    b.setAttribute('aria-label', `${n} of 5, ${LABELS[n]}`);
     if (rating >= n) b.className = 'on';
     b.addEventListener('click', () => rate(rating === n ? null : n));
     el.appendChild(b);
   }
   const lbl = document.createElement('span');
   lbl.className = 'lbl';
-  lbl.textContent = rating ? LABELS[rating] : 'Rate signal';
+  lbl.textContent = rating ? LABELS[rating] : 'How much signal?';
   el.appendChild(lbl);
 }
 
 async function rate(n) {
   const r = await send({ type: 'KT_RATE', id: entryId, patch: { signal_rating: n } });
-  if (r.ok) { renderStars(r.data.entry.signal_rating || 0); setMsg(n ? `Rated ${n}★` : 'Rating cleared', 'ok'); }
+  if (r.ok) { renderStars(r.data.entry.signal_rating || 0); setMsg(n ? `${LABELS[n]}, ${n} of 5` : 'Rating cleared', 'ok'); }
   else setMsg(r.error, 'err');
 }
 

@@ -68,7 +68,7 @@ async function captureTab(tabId, { auto = false } = {}) {
   if (!extracted?.ok) throw new Error(extracted?.error || 'Could not read this video.');
   const { entry } = await api('/api/ingest', { method: 'POST', body: JSON.stringify(extracted.payload) });
   chrome.action.setBadgeText({ tabId, text: '✓' });
-  chrome.action.setBadgeBackgroundColor({ tabId, color: '#00c030' });
+  chrome.action.setBadgeBackgroundColor({ tabId, color: '#2740FF' });
   return { ok: true, entry, method: extracted.method, auto };
 }
 

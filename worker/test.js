@@ -59,7 +59,7 @@ try {
   });
   await t('landing page, app and assets', async () => {
     const landing = await (await fetch(base + '/')).text();
-    assert.ok(landing.includes('Letterboxd for') && landing.includes('/app/'));
+    assert.ok(landing.includes('Shelve the ones') && landing.includes('/app/'));
     assert.equal((await fetch(base + '/app', { redirect: 'manual' })).status, 301);
     assert.ok((await (await fetch(base + '/app/')).text()).includes('manifest.webmanifest'));
     assert.equal((await fetch(base + '/app/icon-180.png')).headers.get('content-type'), 'image/png');

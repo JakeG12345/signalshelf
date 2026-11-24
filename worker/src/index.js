@@ -8,7 +8,7 @@
 import { ensureSchema, createStore } from './store.js';
 import { handleMcp } from './mcp.js';
 import { renderLanding, renderNotFound } from './landing.js';
-import { createAnonymousUser, resolveUser, updateProfile, recentPublicShelves, userByHandle, rateLimit, looksLikeKey, createAccount, changePassword, login, logout } from './accounts.js';
+import { createAnonymousUser, resolveUser, updateProfile, recentPublicShelves, topSignal, userByHandle, rateLimit, looksLikeKey, createAccount, changePassword, login, logout } from './accounts.js';
 import { captureLink } from '../../shared/capture.js';
 import { supadataProvider } from './transcripts.js';
 import { APP_VERSION, MONETIZATION_MODELS, SOURCES, STATUSES, HttpError } from '../../shared/core.js';
@@ -234,7 +234,7 @@ export default {
           ...(user ? { entries: (await createStore(db, user.id).stats()).total, handle: user.handle } : {}) });
       }
       if (path === '/' || path === '') {
-        return html(renderLanding({ origin: url.origin, shelves: await recentPublicShelves(db) }), 200, { 'Cache-Control': 'public, max-age=60' });
+        return html(renderLanding({ origin: url.origin, shelves: await recentPublicShelves(db), top: await topSignal(db) }), 200, { 'Cache-Control': 'public, max-age=60' });
       }
       let m;
       if ((m = path.match(/^\/(?:u\/|@)([A-Za-z0-9_]{3,20})(\/shelf\.json)?\/?$/))) {
