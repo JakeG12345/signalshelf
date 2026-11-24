@@ -119,10 +119,15 @@ async function captureWebPage(rawUrl, fetchImpl, warnings) {
 }
 
 /** Main entry point: returns entry data plus a `warnings` array. Throws HttpError(400) for non-links. */
-export async function captureLink(input, { fetchImpl = fetch } = {}) {
+export async function captureLink(input, { fetchImpl = fetch, transcriptProvider = null, hasTranscript = null } = {}) {
   const url = extractUrl(input);
   if (!url) throw new HttpError(400, 'That does not look like a link.');
-  if (parseVideoId(url)) return fetchYouTubeVideo(url, { fetchImpl });
+  const videoId = parseVideoId(url);
+  if (videoId) {
+    // Skip paid transcript lookups when this video already has one saved
+    const skipTranscript = hasTranscript ? await hasTranscript(`yt_${videoId}`) : false;
+    return fetchYouTubeVideo(url, { fetchImpl, transcriptProvider, skipTranscript });
+  }
   const warnings = [];
   const apple = parseApplePodcastUrl(url);
   if (apple) return captureApplePodcast(url, apple, fetchImpl, warnings);

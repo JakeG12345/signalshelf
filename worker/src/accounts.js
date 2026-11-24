@@ -55,12 +55,21 @@ export async function createAnonymousUser(db, request, limits) {
   return { key, user: { id, handle: null, display_name: null, created_at: now } };
 }
 
-/** Returns the user for a key, or null. Also bumps last_seen_at at most once a day. */
+/**
+ * Returns the user for a key, or null. A key is either the shelf's own private key or a login session key.
+ * Also bumps last_seen_at at most once a day.
+ */
 export async function resolveUser(db, key) {
   if (!looksLikeKey(key)) return null;
-  const user = await db.prepare('SELECT id, handle, display_name, created_at, last_seen_at FROM users WHERE key_hash = ?')
-    .bind(await sha256Hex(key)).first();
+  const hash = await sha256Hex(key);
+  const cols = 'u.id, u.handle, u.display_name, u.created_at, u.last_seen_at, (u.password_hash IS NOT NULL) AS has_password';
+  let user = await db.prepare(`SELECT ${cols}, 0 AS via_session FROM users u WHERE u.key_hash = ?`).bind(hash).first();
+  if (!user) {
+    user = await db.prepare(`SELECT ${cols}, 1 AS via_session FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.key_hash = ?`).bind(hash).first();
+  }
   if (!user) return null;
+  user.has_password = !!user.has_password;
+  user.via_session = !!user.via_session;
   const today = new Date().toISOString().slice(0, 10);
   if (!user.last_seen_at || user.last_seen_at.slice(0, 10) < today) {
     await db.prepare('UPDATE users SET last_seen_at = ? WHERE id = ?').bind(new Date().toISOString(), user.id).run();
@@ -111,4 +120,74 @@ export async function userByHandle(db, handle) {
   const h = String(handle || '').toLowerCase();
   if (!/^[a-z0-9_]{3,20}$/.test(h)) return null;
   return db.prepare('SELECT id, handle, display_name FROM users WHERE handle = ?').bind(h).first();
+}
+
+// ---------- Username + password accounts ----------
+// PBKDF2-SHA256 via WebCrypto. Iterations are kept modest to fit Workers' CPU limits; logins are rate limited.
+const PBKDF2_ITERATIONS = 25000;
+const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
+
+export async function hashPassword(password, saltB64 = b64(crypto.getRandomValues(new Uint8Array(16)))) {
+  const keyMaterial = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
+  const salt = Uint8Array.from(atob(saltB64), c => c.charCodeAt(0));
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: PBKDF2_ITERATIONS }, keyMaterial, 256);
+  return { hash: `pbkdf2$${PBKDF2_ITERATIONS}$${b64(bits)}`, salt: saltB64 };
+}
+
+function safeEqual(a, b) {
+  if (a.length !== b.length) return false;
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return d === 0;
+}
+
+function validatePassword(pw) {
+  const p = String(pw ?? '');
+  if (p.length < 8) throw new HttpError(400, 'Passwords need at least 8 characters.');
+  if (p.length > 200) throw new HttpError(400, 'That password is too long.');
+  return p;
+}
+
+/** Turns the current (possibly anonymous) shelf into an account with a username and password. */
+export async function createAccount(db, user, { handle, password }) {
+  const pw = validatePassword(password);
+  const updated = await updateProfile(db, user.id, { handle: handle ?? user.handle });
+  if (!updated.handle) throw new HttpError(400, 'Pick a username.');
+  const { hash, salt } = await hashPassword(pw);
+  await db.prepare('UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?').bind(hash, salt, user.id).run();
+  return { ...updated, has_password: true };
+}
+
+export async function changePassword(db, user, { current, password }) {
+  const row = await db.prepare('SELECT password_hash, password_salt FROM users WHERE id = ?').bind(user.id).first();
+  if (row?.password_hash) {
+    const check = await hashPassword(String(current ?? ''), row.password_salt);
+    if (!safeEqual(check.hash, row.password_hash)) throw new HttpError(401, 'Current password is wrong.');
+  }
+  const { hash, salt } = await hashPassword(validatePassword(password));
+  await db.prepare('UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?').bind(hash, salt, user.id).run();
+}
+
+/** Username + password login. Returns a new session key for this device. */
+export async function login(db, request, { handle, password }) {
+  const h = String(handle ?? '').trim().replace(/^@/, '').toLowerCase();
+  const ipHash = (await sha256Hex(`ip:${request.headers.get('CF-Connecting-IP') || 'unknown'}`)).slice(0, 24);
+  await rateLimit(db, `login-ip:${ipHash}`, 30, 900, 'Too many login attempts. Wait 15 minutes and try again.');
+  await rateLimit(db, `login-h:${h}`, 10, 900, 'Too many login attempts for this username. Wait 15 minutes and try again.');
+  const row = /^[a-z0-9_]{3,20}$/.test(h)
+    ? await db.prepare('SELECT id, handle, display_name, password_hash, password_salt FROM users WHERE handle = ?').bind(h).first()
+    : null;
+  // Always do the hashing work so timing doesn't reveal which usernames exist
+  const check = await hashPassword(String(password ?? ''), row?.password_salt || 'AAAAAAAAAAAAAAAAAAAAAA==');
+  if (!row?.password_hash || !safeEqual(check.hash, row.password_hash)) throw new HttpError(401, 'Wrong username or password.');
+  const key = `ss_${randomString(32)}`;
+  const now = new Date().toISOString();
+  await db.prepare('INSERT INTO sessions (key_hash, user_id, created_at, last_used_at) VALUES (?, ?, ?, ?)')
+    .bind(await sha256Hex(key), row.id, now, now).run();
+  return { key, user: { id: row.id, handle: row.handle, display_name: row.display_name } };
+}
+
+/** Ends this device's login session (the shelf's own private key can't be logged out, only replaced). */
+export async function logout(db, key) {
+  await db.prepare('DELETE FROM sessions WHERE key_hash = ?').bind(await sha256Hex(key)).run();
 }

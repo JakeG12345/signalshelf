@@ -14,7 +14,7 @@ Save what you watch and listen to, give it a Signal Rating (1–5), tag the mone
 
 ## How it works (cloud)
 
-- **No sign-up.** Opening `/app/` creates a private, anonymous shelf instantly. Your **private link** (Account panel) is your login: open it on other devices to use the same shelf.
+- **Try first, sign up later.** Opening `/app/` creates a private guest shelf instantly. **Sign up** (username + password) keeps it and lets you log in on any device. Guests can still use their **private link** (Account panel) to reach the shelf elsewhere.
 - **Public shelves** live at `/u/<username>` once you pick a username and press Publish. The landing page `/` lists fresh shelves.
 - **Privacy.** Each person's data is isolated; personal notes and transcripts never appear on public pages. Account panel → Delete my shelf removes everything.
 - **Limits.** New shelves per network per day, saves per user per day, writes per hour and items per shelf (see `limitsFrom` in `worker/src/index.js`; override with Worker vars).
@@ -30,10 +30,10 @@ Save what you watch and listen to, give it a Signal Rating (1–5), tag the mone
 
 1. **Cloudflare** (free): sign up, open **Workers & Pages** once, copy your **Account ID**.
 2. **API token**: Profile → API Tokens → **Edit Cloudflare Workers** template → add **Account · D1 · Edit**.
-3. **GitHub secrets** (repo or `production` environment): `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
+3. **GitHub secrets** (repo or `production` environment): `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and optionally `SUPADATA_API_KEY` (free key from supadata.ai) for YouTube transcripts.
 4. Actions → **Test & deploy** → Run workflow. Every push to `main` then tests and redeploys.
 
-Transcripts: YouTube sometimes refuses transcript requests from cloud servers. The video still saves; paste a transcript in the app, or save it from desktop Chrome with the extension (which reads YouTube's transcript panel). Podcasts and web links store their description.
+Transcripts: YouTube blocks most cloud servers, so the Worker gets transcripts through [Supadata](https://supadata.ai) when `SUPADATA_API_KEY` is set (existing captions only, 1 credit per new video; re-saves are free). Without it, or when credits run out, videos still save without a transcript; you can paste one, or save from desktop Chrome with the extension. Podcasts and web links store their description.
 
 ## Chrome extension
 
@@ -57,8 +57,8 @@ npm start       # http://localhost:3456
 ## Development
 
 ```bash
-npm test                    # local server + stdio MCP (27 checks)
-cd worker && npm install && npm test   # multi-user cloud worker + remote MCP (14 checks)
+npm test                    # local server + stdio MCP (28 checks)
+cd worker && npm install && npm test   # multi-user cloud worker + remote MCP (17 checks)
 cd worker && npm run dev    # local cloud dev server
 ```
 

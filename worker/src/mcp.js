@@ -101,7 +101,7 @@ const int = (v, d, min, max) => {
 const text = data => ({ content: [{ type: 'text', text: typeof data === 'string' ? data : JSON.stringify(data, null, 2) }] });
 const toolError = msg => ({ content: [{ type: 'text', text: msg }], isError: true });
 
-async function callTool(name, a = {}, { store, origin, user, guardCapture }) {
+async function callTool(name, a = {}, { store, origin, user, guardCapture, capture = captureLink }) {
   switch (name) {
     case 'list_watched_media':
       return text((await store.query({
@@ -138,7 +138,7 @@ async function callTool(name, a = {}, { store, origin, user, guardCapture }) {
     }
     case 'save_link': {
       if (guardCapture) await guardCapture();
-      const { warnings, ...data } = await captureLink(a.url);
+      const { warnings, ...data } = await capture(a.url);
       await store.upsert(data);
       const e = await store.update(data.id, { status: a.status === 'to_watch' ? 'to_watch' : 'watched' });
       return text({ saved: compact(e), warnings });

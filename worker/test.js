@@ -117,6 +117,41 @@ try {
     assert.equal(m.shortcutUrl, `${base}/app/#k=${A}&add=`); assert.equal(m.shelfUrl, `${base}/u/ryan_builds`);
   });
 
+  await t('accounts: sign up, log in on another device, log out', async () => {
+    assert.equal((await j('/api/account/register', { method: 'POST', headers: as(A), body: JSON.stringify({ password: 'short' }) })).status, 400);
+    const reg = await j('/api/account/register', { method: 'POST', headers: as(A), body: JSON.stringify({ password: 'correct horse battery' }) });
+    assert.equal(reg.status, 200); assert.equal(reg.body.user.handle, 'ryan_builds'); assert.equal(reg.body.user.has_password, true);
+    assert.equal((await j('/api/auth/login', { method: 'POST', body: JSON.stringify({ handle: 'ryan_builds', password: 'wrong password' }) })).status, 401);
+    assert.equal((await j('/api/auth/login', { method: 'POST', body: JSON.stringify({ handle: 'nobody_here', password: 'whatever123' }) })).status, 401);
+    const li = await j('/api/auth/login', { method: 'POST', body: JSON.stringify({ handle: '@Ryan_Builds', password: 'correct horse battery' }) });
+    assert.equal(li.status, 200); assert.notEqual(li.body.key, A);
+    const S = li.body.key;
+    const viaSession = (await j('/api/entries/yt_AAAAAAAAAAA', { headers: as(S) })).body;
+    assert.equal(viaSession.personal_notes, 'A-SECRET', 'session sees the same shelf');
+    assert.equal((await j('/api/meta', { headers: as(S) })).body.user.via_session, true);
+    assert.equal((await j('/api/auth/logout', { method: 'POST', headers: as(S) })).body.ended_session, true);
+    assert.equal((await j('/api/entries', { headers: as(S) })).status, 401, 'session ended');
+    assert.equal((await j('/api/entries', { headers: as(A) })).status, 200, 'private key still works');
+  });
+  await t('login attempts are rate limited per username', async () => {
+    let last;
+    for (let i = 0; i < 11; i++) last = await j('/api/auth/login', { method: 'POST', headers: ip(40 + i), body: JSON.stringify({ handle: 'ryan_builds', password: 'nope-nope-' + i }) });
+    assert.equal(last.status, 429);
+  });
+  await t('Supadata provider: sync, async job, limits (mocked)', async () => {
+    const { supadataProvider } = await import('./src/transcripts.js');
+    assert.equal(supadataProvider(''), null);
+    const sync = supadataProvider('k', async url => { assert.match(url, /mode=native/); return new Response(JSON.stringify({ lang: 'en', content: 'hello  world' })); });
+    assert.equal(await sync('https://www.youtube.com/watch?v=x'), 'hello world');
+    let polls = 0;
+    const job = supadataProvider('k', async url => url.includes('/transcript/job1')
+      ? new Response(JSON.stringify(++polls < 2 ? { status: 'active' } : { status: 'completed', content: [{ text: 'a' }, { text: 'b' }] }))
+      : new Response(JSON.stringify({ jobId: 'job1' }), { status: 202 }));
+    assert.equal(await job('u'), 'a b');
+    const limited = supadataProvider('k', async () => new Response('{}', { status: 429 }));
+    await assert.rejects(limited('u'), /limit/);
+  });
+
   console.log('\nRemote MCP (official SDK client over Streamable HTTP)');
   const { Client } = await import('../node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js');
   const { StreamableHTTPClientTransport } = await import('../node_modules/@modelcontextprotocol/sdk/dist/esm/client/streamableHttp.js');

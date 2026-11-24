@@ -78,6 +78,16 @@ jobs:
       - name: Deploy worker
         run: npx wrangler deploy 2>&1 | tee deploy.log
 
+      - name: Set optional secrets
+        env:
+          SUPADATA_API_KEY: ${{ secrets.SUPADATA_API_KEY }}
+        run: |
+          if [ -n "$SUPADATA_API_KEY" ]; then
+            printf '%s' "$SUPADATA_API_KEY" | npx wrangler secret put SUPADATA_API_KEY
+          else
+            echo "::warning::SUPADATA_API_KEY not set: YouTube transcripts will often be missing for links saved in the app."
+          fi
+
       - name: Summary
         run: |
           url=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1)

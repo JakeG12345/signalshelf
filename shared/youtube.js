@@ -146,7 +146,11 @@ export async function fetchTranscriptFromTrack(track, fetchImpl = fetch) {
 }
 
 /** Fetches metadata (+ transcript when available) for a YouTube URL. Never throws for missing captions. */
-export async function fetchYouTubeVideo(input, { fetchImpl = fetch } = {}) {
+/**
+ * transcriptProvider: optional async (watchUrl) => text, tried first (e.g. a paid transcript API that isn't IP-blocked).
+ * skipTranscript: true when the caller already has this video's transcript (saves provider credits).
+ */
+export async function fetchYouTubeVideo(input, { fetchImpl = fetch, transcriptProvider = null, skipTranscript = false } = {}) {
   const videoId = parseVideoId(input);
   if (!videoId) {
     const err = new Error('That does not look like a YouTube video link.');
@@ -171,6 +175,7 @@ export async function fetchYouTubeVideo(input, { fetchImpl = fetch } = {}) {
     warnings.push(`Could not load the YouTube page: ${e.message}`);
   }
 
+  let tracks = [];
   if (player) {
     const status = player.playabilityStatus?.status;
     if (status && status !== 'OK') warnings.push(`YouTube reports this video as ${status}${player.playabilityStatus?.reason ? `: ${player.playabilityStatus.reason}` : ''}.`);
@@ -180,21 +185,26 @@ export async function fetchYouTubeVideo(input, { fetchImpl = fetch } = {}) {
     out.creator = d.author || mf.ownerChannelName || '';
     out.duration_sec = Number(d.lengthSeconds) || null;
     out.published_at = mf.publishDate || mf.uploadDate || null;
-    const tracks = player.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
-    if (!tracks.length) warnings.push('This video has no caption tracks.');
-    else {
-      out.transcript = await fetchTranscriptFromTrack(pickCaptionTrack(tracks), fetchImpl);
-    }
-    if (tracks.length) out._hadTracks = true;
+    tracks = player.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
   }
 
-  // Works even when the player data is withheld (e.g. "confirm you're not a bot" pages still embed it sometimes).
-  if (!out.transcript && html) {
-    try { out.transcript = await fetchInnertubeTranscript(html, fetchImpl); } catch { /* ignore */ }
+  if (skipTranscript) {
+    out.transcript_status = null; // caller keeps the transcript it already has
+  } else {
+    // 1) Transcript service first when configured (YouTube blocks most cloud servers)
+    if (transcriptProvider) {
+      try { out.transcript = String((await transcriptProvider(url)) || '').trim(); }
+      catch (e) { warnings.push(`Transcript service: ${e.message}`); }
+    }
+    // 2) The caption file YouTube lists, 3) the "Show transcript" panel endpoint
+    if (!out.transcript && tracks.length) out.transcript = await fetchTranscriptFromTrack(pickCaptionTrack(tracks), fetchImpl);
+    if (!out.transcript && html) {
+      try { out.transcript = await fetchInnertubeTranscript(html, fetchImpl); } catch { /* ignore */ }
+    }
+    if (out.transcript) out.transcript_status = 'ok';
+    else if (player && !tracks.length && !transcriptProvider) warnings.push('This video has no captions.');
+    else warnings.push('No transcript available for this video right now. You can paste one in the app, or save it from desktop Chrome with the extension.');
   }
-  if (out.transcript) out.transcript_status = 'ok';
-  else if (out._hadTracks) warnings.push('YouTube did not return a transcript to the server. You can paste one in the app, or save it from desktop Chrome with the extension.');
-  delete out._hadTracks;
 
   if (!out.title) {
     try {

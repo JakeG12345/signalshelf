@@ -66,7 +66,7 @@ export function renderLanding({ origin, shelves = [] }) {
 <div class="wrap">
   <nav>
     <a class="logo" href="/"><img src="/app/icon-192.png" alt="">Signal <span>Shelf</span></a>
-    <a class="btn small" href="/app/">Open app</a>
+    <span class="ctas"><a class="btn small" href="/app/#login" style="border:none;background:none">Log in</a><a class="btn small" href="/app/">Open app</a></span>
   </nav>
 
   <section class="hero">
@@ -77,7 +77,7 @@ export function renderLanding({ origin, shelves = [] }) {
       <a class="btn primary" href="/app/">Start your shelf, free</a>
       ${shelves[0] ? `<a class="btn" href="/u/${esc(shelves[0].handle)}">See an example</a>` : ''}
     </div>
-    <div class="note">No sign-up. Works on iPhone, desktop and inside Claude.</div>
+    <div class="note">Try it instantly, no sign-up needed. Create a free account when you want to keep it. Works on iPhone, desktop and inside Claude.</div>
   </section>
 
   <section class="steps">

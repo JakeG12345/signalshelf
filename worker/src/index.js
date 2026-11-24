@@ -8,8 +8,9 @@
 import { ensureSchema, createStore } from './store.js';
 import { handleMcp } from './mcp.js';
 import { renderLanding, renderNotFound } from './landing.js';
-import { createAnonymousUser, resolveUser, updateProfile, recentPublicShelves, userByHandle, rateLimit, looksLikeKey } from './accounts.js';
+import { createAnonymousUser, resolveUser, updateProfile, recentPublicShelves, userByHandle, rateLimit, looksLikeKey, createAccount, changePassword, login, logout } from './accounts.js';
 import { captureLink } from '../../shared/capture.js';
+import { supadataProvider } from './transcripts.js';
 import { APP_VERSION, MONETIZATION_MODELS, SOURCES, STATUSES, HttpError } from '../../shared/core.js';
 import { DEFAULT_SHELF_SETTINGS, normalizeShelfSettings, shelfDataFromEntries, renderShelfHtml } from '../../shared/shelf-render.js';
 
@@ -53,6 +54,12 @@ async function shelfFor(db, user) {
   return { settings, data: { ...shelfDataFromEntries(entries, settings), handle: user.handle } };
 }
 
+/** Link capture with the transcript service, skipping it for videos that already have a transcript. */
+export const captureFor = (env, store) => link => captureLink(link, {
+  transcriptProvider: supadataProvider(env.SUPADATA_API_KEY),
+  hasTranscript: async id => ((await store.get(id))?.transcript || '').length > 0
+});
+
 const captureGuard = (db, user, store, limits) => async () => {
   await rateLimit(db, `c:${user.id}`, limits.capturesPerUserPerDay, 86400, 'Daily save limit reached. Try again tomorrow.');
   if ((await store.count()) >= limits.itemsPerUser) throw new HttpError(403, `Shelf is full (${limits.itemsPerUser} items).`);
@@ -67,6 +74,20 @@ async function privateApi(request, url, ctx) {
   if (method !== 'GET') await rateLimit(db, `w:${user.id}`, limits.writesPerUserPerHour, 3600, 'Slow down a little: too many changes this hour.');
 
   const guardCapture = captureGuard(db, user, store, limits);
+
+  if (path === '/api/account/register' && method === 'POST') {
+    const b = await readJson(request);
+    return json({ ok: true, user: await createAccount(db, user, { handle: b.handle, password: b.password }) });
+  }
+  if (path === '/api/account/password' && method === 'POST') {
+    const b = await readJson(request);
+    await changePassword(db, user, { current: b.current, password: b.password });
+    return json({ ok: true });
+  }
+  if (path === '/api/auth/logout' && method === 'POST') {
+    if (user.via_session) await logout(db, key);
+    return json({ ok: true, ended_session: user.via_session });
+  }
 
   if (path === '/api/me') {
     if (method === 'GET') return json({ ...user, stats: await store.stats() });
@@ -107,7 +128,7 @@ async function privateApi(request, url, ctx) {
     const { url: link, status } = await readJson(request);
     if (!link) throw new HttpError(400, 'url is required');
     await guardCapture();
-    const { warnings, ...data } = await captureLink(link);
+    const { warnings, ...data } = await ctx.capture(link);
     let entry = await store.upsert(data);
     if (status && STATUSES.includes(status)) entry = await store.update(entry.id, { status });
     entry = slim(entry);
@@ -228,6 +249,9 @@ export default {
           ? json(shelf.data, 200, { ...cache, 'Access-Control-Allow-Origin': '*' })
           : html(renderShelfHtml(shelf.data, { jsonHref: `/u/${u.handle}/shelf.json`, ctaUrl: `${url.origin}/`, canonicalUrl: `${url.origin}/u/${u.handle}` }), 200, cache);
       }
+      if (path === '/api/auth/login' && request.method === 'POST') {
+        return json(await login(db, request, await readJson(request)));
+      }
       if (path === '/api/auth/anon' && request.method === 'POST') {
         return json(await createAnonymousUser(db, request, limits), 201);
       }
@@ -245,9 +269,9 @@ export default {
       const store = createStore(db, user.id);
       if (isMcp) {
         await rateLimit(db, `w:${user.id}`, limits.writesPerUserPerHour, 3600, 'Too many requests this hour.');
-        return handleMcp(request, { store, origin: url.origin, user, guardCapture: captureGuard(db, user, store, limits) });
+        return handleMcp(request, { store, origin: url.origin, user, guardCapture: captureGuard(db, user, store, limits), capture: captureFor(env, store) });
       }
-      return await privateApi(request, url, { db, user, key, limits, store });
+      return await privateApi(request, url, { db, user, key, limits, store, capture: captureFor(env, store) });
     } catch (err) {
       const status = err.status || 500;
       if (status >= 500) console.error(err);

@@ -136,6 +136,18 @@ await t('YouTube: innertube transcript fallback when caption files are empty', a
   const r = await yt.fetchYouTubeVideo('EEEEEEEEEEE', { fetchImpl });
   assert.equal(sentParams, 'P4R4MS'); assert.equal(r.transcript, 'charge a setup fee'); assert.equal(r.transcript_status, 'ok');
 });
+await t('YouTube: transcript provider first; skipped when already saved', async () => {
+  const player = { playabilityStatus: { status: 'OK' }, videoDetails: { videoId: 'FFFFFFFFFFF', title: 'T', author: 'A', lengthSeconds: '60' } };
+  const fetchImpl = async () => ({ ok: true, status: 200, text: async () => `ytInitialPlayerResponse = ${JSON.stringify(player)};` });
+  let calls = 0;
+  const provider = async () => { calls++; return 'from provider'; };
+  const r = await yt.fetchYouTubeVideo('FFFFFFFFFFF', { fetchImpl, transcriptProvider: provider });
+  assert.equal(r.transcript, 'from provider'); assert.equal(r.transcript_status, 'ok');
+  const s = await yt.fetchYouTubeVideo('FFFFFFFFFFF', { fetchImpl, transcriptProvider: provider, skipTranscript: true });
+  assert.equal(calls, 1); assert.equal(s.transcript, '');
+  const c = await cap.captureLink('https://youtu.be/FFFFFFFFFFF', { fetchImpl, transcriptProvider: provider, hasTranscript: async id => id === 'yt_FFFFFFFFFFF' });
+  assert.equal(calls, 1, 'hasTranscript skips the provider'); assert.equal(c.title, 'T');
+});
 await t('shelf excludes notes/transcripts, escapes HTML', () => {
   dbm.updateEntry('yt_AAAAAAAAAAA', { title: 'Agency <script>alert(1)</script>', personal_notes: 'SECRET-NOTE' });
   const r = shelf.publishShelf({ minRating: 4, title: 'Test Shelf' });

@@ -236,8 +236,34 @@
     <div class="mhead"><h2 style="margin:0;flex:1">Account</h2><button class="x" data-close>×</button></div>
     <p class="meta" id="a-who"></p>
 
-    <label class="lbl">Your private link · save this</label>
-    <p>Your shelf has no password: this link <i>is</i> your login. Open it on your other devices (and once in Safari if you use the home-screen app) to use the same shelf. Don't share it.</p>
+    <div id="a-signup">
+      <label class="lbl">Create your account</label>
+      <p class="meta" style="margin-top:0">Keep this shelf and log in from any device. Free.</p>
+      <form id="signupform" class="grid2">
+        <input id="su-handle" placeholder="Username" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="username" maxlength="21" />
+        <input id="su-pass" type="password" placeholder="Password (8+ characters)" autocomplete="new-password" />
+        <button class="primary" type="submit" style="grid-column:1/-1">Create account</button>
+      </form>
+    </div>
+
+    <div id="a-login">
+      <label class="lbl">Already have an account?</label>
+      <form id="loginform" class="grid2">
+        <input id="li-handle" placeholder="Username" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="username" />
+        <input id="li-pass" type="password" placeholder="Password" autocomplete="current-password" />
+        <button type="submit" style="grid-column:1/-1">Log in</button>
+      </form>
+    </div>
+
+    <div id="a-signedin" hidden>
+      <div class="row" style="justify-content:space-between;margin-top:8px">
+        <span>Logged in as <b id="a-handle"></b></span>
+        <button id="a-logout" type="button">Log out</button>
+      </div>
+    </div>
+
+    <label class="lbl">Private link</label>
+    <p class="meta" style="margin-top:0" id="a-synctext"></p>
     <code id="c-sync"></code><button class="copy" data-copy="c-sync">Copy</button>
 
     <label class="lbl">iPhone · add to home screen</label>
@@ -261,7 +287,7 @@
     <label class="lbl">Chrome extension (desktop)</label>
     <p>In the extension's <b>Server settings</b> use URL <code id="c-origin"></code> and key <code id="c-key"></code><button class="copy" data-copy="c-key">Copy key</button></p>
 
-    <label class="lbl">Use a different shelf on this device</label>
+    <label class="lbl">Advanced · open a shelf from a private link or key</label>
     <form class="row" id="switchform"><input id="switchkey" placeholder="Paste a private link or key" autocapitalize="none" autocorrect="off" style="flex:1;min-width:0" /><button type="submit">Switch</button></form>
 
     <label class="lbl">Your data</label>
@@ -332,6 +358,7 @@ async function loadMeta() {
   const caps = META.capabilities || {};
   $('#btn-sync').hidden = !caps.podcastsSync;
   $('#btn-connect').hidden = META.mode !== 'cloud';
+  if (META.mode === 'cloud') $('#btn-connect').textContent = META.user?.has_password ? 'Account' : 'Sign up';
   const s = META.stats;
   const n = (v, one, many) => `<b>${v || 0}</b> ${v === 1 ? one : many}`;
   $('#stats').innerHTML = [n(s.total, 'item', 'items'), n(s.youtube, 'video', 'videos'), n(s.podcasts, 'episode', 'episodes'),
@@ -569,17 +596,59 @@ $('#s-unpublish').addEventListener('click', async () => {
 });
 
 // Account panel
-$('#btn-connect').addEventListener('click', () => {
+function openAccount(focusLogin = false) {
   const key = getToken();
-  $('#a-who').innerHTML = META.user?.handle
-    ? `Signed in as <b>@${esc(META.user.handle)}</b>`
-    : 'Anonymous shelf. Pick a username in <b>Public Shelf</b> to get a shareable link.';
+  const u = META.user || {};
+  const hasAccount = !!u.has_password;
+  $('#a-signup').hidden = hasAccount;
+  $('#a-login').hidden = hasAccount;
+  $('#a-signedin').hidden = !hasAccount;
+  $('#a-handle').textContent = u.handle ? '@' + u.handle : '';
+  $('#su-handle').value = u.handle || '';
+  $('#a-who').innerHTML = hasAccount ? '' : 'You\'re using a guest shelf on this device. Create an account to keep it and use it anywhere.';
+  $('#a-synctext').textContent = hasAccount
+    ? 'Opens your shelf without typing your password (handy for the iPhone Shortcut). Don\'t share it.'
+    : 'Until you create an account, this link is the only way back to this shelf from another device. Don\'t share it.';
   $('#c-sync').textContent = META.syncUrl || '';
   $('#c-shortcut').textContent = META.shortcutUrl || '';
   $('#c-mcp').textContent = META.mcpUrl || '';
   $('#c-origin').textContent = location.origin;
   $('#c-key').textContent = key;
   $('#connect').classList.add('open'); document.body.style.overflow = 'hidden';
+  if (focusLogin && !hasAccount) setTimeout(() => $('#li-handle').focus(), 50);
+}
+$('#btn-connect').addEventListener('click', () => openAccount());
+
+$('#signupform').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    await api('/api/account/register', { method: 'POST', body: JSON.stringify({ handle: $('#su-handle').value.trim(), password: $('#su-pass').value }) });
+    $('#su-pass').value = '';
+    await loadMeta();
+    toast(`Account created. Welcome, @${META.user.handle}!`);
+    openAccount();
+  } catch (err) { toast(err.message, true); }
+});
+
+$('#loginform').addEventListener('submit', async e => {
+  e.preventDefault();
+  const items = META.stats?.total || 0;
+  if (items && !META.user?.has_password &&
+      !confirm(`This guest shelf has ${items} item${items === 1 ? '' : 's'}. Logging in switches to your account, and this guest shelf will only be reachable through its private link. Continue?`)) return;
+  try {
+    const res = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ handle: $('#li-handle').value.trim(), password: $('#li-pass').value }) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Login failed');
+    setToken(data.key);
+    location.hash = ''; location.reload();
+  } catch (err) { toast(err.message, true); }
+});
+
+$('#a-logout').addEventListener('click', async () => {
+  if (!confirm('Log out on this device? You can log back in with your username and password.')) return;
+  try { await api('/api/auth/logout', { method: 'POST' }); } catch {}
+  setToken(''); location.hash = ''; location.reload();
 });
 document.addEventListener('click', async e => {
   const b = e.target.closest('[data-copy],[data-copytext]');
@@ -615,11 +684,12 @@ $('#c-export').addEventListener('click', async e => {
 // Deep links: #k=<key> (private link), #add=<url> (iPhone share shortcut), #open=<id> (extension)
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
-  return { k: p.get('k'), add: p.get('add'), open: p.get('open') };
+  return { k: p.get('k'), add: p.get('add'), open: p.get('open'), login: p.has('login') ? '1' : null };
 }
 
 async function handleHash() {
-  const { k, add, open } = readHash();
+  const { k, add, open, login } = readHash();
+  if (login !== null && login !== undefined && META.mode === 'cloud') { history.replaceState(null, '', location.pathname); return openAccount(true); }
   if (!k && !add && !open) return;
   history.replaceState(null, '', location.pathname);
   if (k && keyFromInput(k) && k !== getToken()) {

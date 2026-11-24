@@ -32,8 +32,17 @@ export const CLOUD_SCHEMA_SQL = [
     display_name TEXT,
     created_at TEXT NOT NULL,
     last_seen_at TEXT,
-    created_ip_hash TEXT
+    created_ip_hash TEXT,
+    password_hash TEXT,
+    password_salt TEXT
   )`,
+  `CREATE TABLE IF NOT EXISTS sessions (
+    key_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_used_at TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)`,
   `CREATE TABLE IF NOT EXISTS entries (
     user_id TEXT NOT NULL,
     id TEXT NOT NULL,${ENTRY_COLUMNS},
@@ -73,6 +82,10 @@ export function ensureSchema(db) {
         ]);
       }
       await db.batch(CLOUD_SCHEMA_SQL.map(sql => db.prepare(sql)));
+      // Columns added after launch
+      const userCols = ((await db.prepare('PRAGMA table_info(users)').all()).results || []).map(c => c.name);
+      const add = [['password_hash', 'TEXT'], ['password_salt', 'TEXT']].filter(([c]) => !userCols.includes(c));
+      if (add.length) await db.batch(add.map(([c, t]) => db.prepare(`ALTER TABLE users ADD COLUMN ${c} ${t}`)));
     })().catch(err => { schemaReady = null; throw err; });
   }
   return schemaReady;
@@ -157,6 +170,7 @@ export function createStore(db, userId) {
         db.prepare('DELETE FROM entries_fts WHERE user_id = ?').bind(userId),
         db.prepare('DELETE FROM entries WHERE user_id = ?').bind(userId),
         db.prepare('DELETE FROM user_settings WHERE user_id = ?').bind(userId),
+        db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId),
         db.prepare('DELETE FROM users WHERE id = ?').bind(userId)
       ]);
     }
