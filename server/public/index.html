@@ -944,8 +944,8 @@ async function addAppleLink(url) {
   const apple = appleIds(url);
   if (!apple) return false;
   try {
-    const eps = await podEpisodes(apple.show, 300);
-    const ep = apple.episode && eps.find(x => x.id === `pod_apple_${apple.episode}`);
+    const eps = await podEpisodes(apple.show, 200);
+    const ep = apple.episode && (eps.find(x => x.id === `pod_apple_${apple.episode}`) || await podEpisode(apple.show, apple.episode));
     if (ep) { addEpisode(ep); return true; }
     if (!apple.episode && eps.length) { // a show link: pick the episode
       ADD.shows = [{ id: apple.show, title: eps[0].creator }];
@@ -1262,18 +1262,32 @@ async function podSearch(q) {
       id: String(r.collectionId), title: r.collectionName || '', creator: r.artistName || '', thumbnail: httpsOrNull(r.artworkUrl100) }));
   } catch { return api('/api/podcasts/search?q=' + encodeURIComponent(q)); }
 }
+// Apple's lookup returns at most 200 results; asking for more fails.
+const mapEpisode = (r, feedUrl) => ({
+  feed_url: feedUrl || r.feedUrl || null, episode_guid: r.episodeGuid || null, enclosure_url: r.episodeUrl || null,
+  key: `pod_apple_${r.trackId}`, kind: 'podcast', id: `pod_apple_${r.trackId}`, title: r.trackName || 'Untitled',
+  creator: r.collectionName || '', url: r.trackViewUrl || null, watched_at: null, published_at: r.releaseDate || null,
+  duration_sec: r.trackTimeMillis ? Math.round(r.trackTimeMillis / 1000) : null,
+  thumbnail: httpsOrNull(r.artworkUrl600 || r.artworkUrl160),
+  description: String(r.description || r.shortDescription || '').trim().slice(0, 20000) });
+const showOf = data => (data.results || []).find(r => r.kind === 'podcast' || r.wrapperType === 'track' && r.feedUrl);
 async function podEpisodes(id, limit = 100) {
   try {
-    const data = await itunesJsonp('/lookup', { id, entity: 'podcastEpisode', limit: String(limit) });
-    const show = (data.results || []).find(r => r.kind === 'podcast' || r.wrapperType === 'track' && r.feedUrl);
-    return (data.results || []).filter(r => r.kind === 'podcast-episode' && r.trackId).map(r => ({
-      feed_url: show?.feedUrl || r.feedUrl || null, episode_guid: r.episodeGuid || null, enclosure_url: r.episodeUrl || null,
-      key: `pod_apple_${r.trackId}`, kind: 'podcast', id: `pod_apple_${r.trackId}`, title: r.trackName || 'Untitled',
-      creator: r.collectionName || '', url: r.trackViewUrl || null, watched_at: null, published_at: r.releaseDate || null,
-      duration_sec: r.trackTimeMillis ? Math.round(r.trackTimeMillis / 1000) : null,
-      thumbnail: httpsOrNull(r.artworkUrl600 || r.artworkUrl160),
-      description: String(r.description || r.shortDescription || '').trim().slice(0, 20000) }));
+    const data = await itunesJsonp('/lookup', { id, entity: 'podcastEpisode', limit: String(Math.min(limit, 200)) });
+    const feed = showOf(data)?.feedUrl;
+    return (data.results || []).filter(r => r.kind === 'podcast-episode' && r.trackId).map(r => mapEpisode(r, feed));
   } catch { return api('/api/podcasts/episodes?id=' + encodeURIComponent(id)); }
+}
+/** One episode by its own id, for links to episodes older than the latest 200. */
+async function podEpisode(showId, episodeId) {
+  try {
+    const [ep, show] = await Promise.all([
+      itunesJsonp('/lookup', { id: episodeId, entity: 'podcastEpisode' }),
+      itunesJsonp('/lookup', { id: showId })
+    ]);
+    const r = (ep.results || []).find(x => String(x.trackId) === String(episodeId) && (x.kind === 'podcast-episode' || x.episodeUrl));
+    return r ? mapEpisode(r, showOf(show)?.feedUrl) : null;
+  } catch { return null; }
 }
 // podcasts.apple.com/<cc>/podcast/<slug>/id<show>?i=<episode>
 function appleIds(link) {

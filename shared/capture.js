@@ -61,7 +61,7 @@ async function captureApplePodcast(url, ids, fetchImpl, warnings) {
   if (ids.episodeId) {
     try {
       const data = JSON.parse(await getText(
-        `https://itunes.apple.com/lookup?id=${ids.podcastId}&entity=podcastEpisode&limit=300`, fetchImpl));
+        `https://itunes.apple.com/lookup?id=${ids.podcastId}&entity=podcastEpisode&limit=200`, fetchImpl));
       const ep = (data.results || []).find(r => String(r.trackId) === ids.episodeId && r.kind === 'podcast-episode');
       if (ep) {
         const desc = String(ep.description || ep.shortDescription || '').trim();
@@ -72,7 +72,7 @@ async function captureApplePodcast(url, ids, fetchImpl, warnings) {
           transcript: desc, transcript_status: desc ? 'description' : 'missing', warnings
         };
       }
-      warnings.push('Episode not in the show\'s latest 300 episodes; used the page details instead.');
+      warnings.push('Episode not in the show\'s latest 200 episodes; used the page details instead.');
     } catch (e) {
       warnings.push(`Apple Podcasts lookup failed: ${e.message}`);
     }
