@@ -72,12 +72,14 @@ export const CLOUD_SCHEMA_SQL = [
     count INTEGER NOT NULL,
     reset_at INTEGER NOT NULL
   )`,
-  `CREATE TABLE IF NOT EXISTS transcript_jobs (
-    token TEXT PRIMARY KEY,
+  `CREATE TABLE IF NOT EXISTS stt_jobs (
     user_id TEXT NOT NULL,
     entry_id TEXT NOT NULL,
+    audio_url TEXT NOT NULL,
     cache_keys TEXT,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    started_at INTEGER,
+    PRIMARY KEY (user_id, entry_id)
   )`,
   `CREATE TABLE IF NOT EXISTS podcast_transcripts (
     key TEXT PRIMARY KEY,
@@ -113,6 +115,7 @@ export function ensureSchema(db) {
         .filter(([c]) => !userCols.includes(c));
       if (add.length) await db.batch(add.map(([c, t]) => db.prepare(`ALTER TABLE users ADD COLUMN ${c} ${t}`)));
       await db.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub)').run();
+      await db.prepare('DROP TABLE IF EXISTS transcript_jobs').run(); // replaced by stt_jobs
     })().catch(err => { schemaReady = null; throw err; });
   }
   return schemaReady;

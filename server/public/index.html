@@ -616,12 +616,29 @@ async function loadEntries() {
   catch (e) { $('#list').innerHTML = `<div class="empty">Could not load entries: ${esc(e.message)}</div>`; return; }
   if (seq !== loadSeq) return; // a newer search already started
   renderList(items, !!p.toString());
-  // Episodes being transcribed: check back until they're done (about a minute each)
-  clearTimeout(pendingTimer);
-  if (items.some(i => i.transcript_status === 'pending') && pendingChecks++ < 20) pendingTimer = setTimeout(loadEntries, 30000);
-  else if (!items.some(i => i.transcript_status === 'pending')) pendingChecks = 0;
+  items.filter(i => i.transcript_status === 'pending').forEach(i => transcribe(i.id)); // resume any left behind
 }
-let pendingTimer, pendingChecks = 0;
+
+// Speech-to-text for podcasts: the server waits on Deepgram (about 30s an hour of audio), two at a time.
+const STT = { queue: [], busy: new Set(), running: 0 };
+function transcribe(id) {
+  if (STT.busy.has(id)) return;
+  STT.busy.add(id); STT.queue.push(id); pumpTranscribe();
+}
+async function pumpTranscribe() {
+  while (STT.running < 2 && STT.queue.length) {
+    const id = STT.queue.shift(); STT.running++;
+    api('/api/transcribe/' + encodeURIComponent(id), { method: 'POST' })
+      .then(r => {
+        if (r.status === 'ok') { toast(`Transcript ready: ${r.entry.title}`); loadEntries(); }
+        else if (r.status === 'none') loadEntries();
+        else setTimeout(() => { STT.busy.delete(id); loadEntries(); }, 60000); // another tab is on it
+        if (r.status !== 'running') STT.busy.delete(id);
+      })
+      .catch(err => { STT.busy.delete(id); toast(err.message, true); loadEntries(); })
+      .finally(() => { STT.running--; pumpTranscribe(); });
+  }
+}
 
 // Source marks on cards: where the item came from, at a glance
 const SOURCE_ICON = {
@@ -915,7 +932,7 @@ async function addEpisode(it) {
     if (!hasFilters()) cacheSet('entries', [r.entry, ...[...ITEMS.values()].filter(i => i.id !== r.entry.id)].slice(0, 200));
     toast(r.entry.transcript_status === 'ok' ? 'Saved, with transcript' : r.entry.transcript_status === 'pending' ? 'Saved. Transcribing now.' : 'Saved');
     refreshMetaSoon();
-    if (r.entry.transcript_status === 'pending') { clearTimeout(pendingTimer); pendingTimer = setTimeout(loadEntries, 30000); }
+    if (r.entry.transcript_status === 'pending') transcribe(r.entry.id);
   } catch (err) {
     document.querySelector(`.card[data-id="${tmp}"]`)?.remove();
     toast(err.message, true);

@@ -148,8 +148,11 @@ export async function podcastTranscript({ feedUrl, guid, enclosure, title }, fet
 }
 
 // ---------- Speech-to-text fallback (Deepgram), for shows that don't publish a transcript ----------
-// The save returns at once; Deepgram transcribes the episode audio and calls /hooks/deepgram/<token> when done.
+// Saving queues a job and marks the episode 'pending'. The app then calls POST /api/transcribe/<id>, which asks
+// Deepgram and waits for the answer (about 30s for an hour of audio). Jobs left behind (app closed) are resumed
+// the next time the app loads; failures come back as a readable error and the episode keeps its description.
 const JOB_TTL_SEC = 86400;
+const RUNNING_SEC = 360;
 
 export const deepgramEnabled = env => !!env.DEEPGRAM_API_KEY;
 
@@ -172,23 +175,17 @@ export async function cacheTranscript(db, keys, text, source) {
   await db.batch(keys.map(k => db.prepare('INSERT INTO podcast_transcripts (key, text, source, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO NOTHING').bind(k, text, source, now)));
 }
 
-/** Starts transcription of an episode's audio. Returns true when a job was queued. */
-export async function startTranscription(env, db, { userId, entryId, audioUrl, origin, cacheKeys = [] }) {
+/** Queues transcription of an episode's audio. Returns true when queued. */
+export async function queueTranscription(env, db, { userId, entryId, audioUrl, cacheKeys = [] }) {
   if (!deepgramEnabled(env) || !isHttp(audioUrl)) return false;
   const now = Math.floor(Date.now() / 1000);
-  const token = [...crypto.getRandomValues(new Uint8Array(24))].map(b => b.toString(16).padStart(2, '0')).join('');
-  await db.prepare('DELETE FROM transcript_jobs WHERE created_at < ?').bind(now - JOB_TTL_SEC).run();
-  const q = new URLSearchParams({ model: 'nova-3', smart_format: 'true', paragraphs: 'true', callback: `${origin}/hooks/deepgram/${token}` });
-  const res = await fetch(`${env.DEEPGRAM_URL || 'https://api.deepgram.com'}/v1/listen?${q}`, {
-    method: 'POST', headers: { Authorization: `Token ${env.DEEPGRAM_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url: audioUrl }), signal: AbortSignal.timeout(15000)
-  }).catch(err => ({ ok: false, status: 0, text: async () => err.message }));
-  if (!res.ok) {
-    console.error('Deepgram start failed', res.status, (await res.text().catch(() => '')).slice(0, 300));
-    return false;
-  }
-  await db.prepare('INSERT INTO transcript_jobs (token, user_id, entry_id, cache_keys, created_at) VALUES (?, ?, ?, ?, ?)').bind(token, userId, entryId, JSON.stringify(cacheKeys), now).run();
-  await db.prepare("UPDATE entries SET transcript_status = 'pending' WHERE user_id = ? AND id = ?").bind(userId, entryId).run();
+  await db.batch([
+    db.prepare('DELETE FROM stt_jobs WHERE created_at < ?').bind(now - JOB_TTL_SEC),
+    db.prepare(`INSERT INTO stt_jobs (user_id, entry_id, audio_url, cache_keys, created_at, started_at) VALUES (?, ?, ?, ?, ?, NULL)
+      ON CONFLICT(user_id, entry_id) DO UPDATE SET audio_url = excluded.audio_url, cache_keys = excluded.cache_keys, created_at = excluded.created_at, started_at = NULL`)
+      .bind(userId, entryId, audioUrl, JSON.stringify(cacheKeys), now),
+    db.prepare("UPDATE entries SET transcript_status = 'pending' WHERE user_id = ? AND id = ?").bind(userId, entryId)
+  ]);
   return true;
 }
 
@@ -198,12 +195,46 @@ export function deepgramText(data) {
   return String(alt.paragraphs?.transcript || alt.transcript || '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-/** Deepgram's callback. Single use per token. Returns { userId, entryId, text } or null. */
-export async function finishTranscription(db, token, data) {
-  if (!/^[0-9a-f]{48}$/.test(token)) return null;
-  const job = await db.prepare('DELETE FROM transcript_jobs WHERE token = ? RETURNING user_id, entry_id, cache_keys, created_at').bind(token).first();
-  if (!job || job.created_at < Math.floor(Date.now() / 1000) - JOB_TTL_SEC) return null;
-  let cacheKeys = [];
-  try { cacheKeys = JSON.parse(job.cache_keys || '[]'); } catch { /* none */ }
-  return { userId: job.user_id, entryId: job.entry_id, cacheKeys, text: deepgramText(data) };
+const resetPending = (db, userId, entryId) => db.prepare(`UPDATE entries SET transcript_status =
+    CASE WHEN length(COALESCE(transcript, '')) > 0 THEN 'description' ELSE 'missing' END
+  WHERE user_id = ? AND id = ? AND transcript_status = 'pending'`).bind(userId, entryId).run();
+
+/**
+ * Runs a queued job for one of the user's episodes and waits for Deepgram.
+ * Returns { status: 'ok', text, cacheKeys } | { status: 'running' } | { status: 'none' }.
+ * Throws an error with a readable message when Deepgram fails (the episode goes back to its description).
+ */
+export async function runTranscription(env, db, userId, entryId) {
+  const now = Math.floor(Date.now() / 1000);
+  const job = await db.prepare('SELECT * FROM stt_jobs WHERE user_id = ? AND entry_id = ? AND created_at >= ?').bind(userId, entryId, now - JOB_TTL_SEC).first();
+  if (!job || !deepgramEnabled(env)) { await resetPending(db, userId, entryId); return { status: 'none' }; }
+  // Claim it, unless another request is already waiting on Deepgram for this episode
+  const claim = await db.prepare('UPDATE stt_jobs SET started_at = ? WHERE user_id = ? AND entry_id = ? AND (started_at IS NULL OR started_at < ?)')
+    .bind(now, userId, entryId, now - RUNNING_SEC).run();
+  if (!claim.meta?.changes) return { status: 'running' };
+
+  const q = new URLSearchParams({ model: 'nova-3', smart_format: 'true', paragraphs: 'true' });
+  let res, data = {};
+  try {
+    res = await fetch(`${env.DEEPGRAM_URL || 'https://api.deepgram.com'}/v1/listen?${q}`, {
+      method: 'POST', headers: { Authorization: `Token ${env.DEEPGRAM_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: job.audio_url }), signal: AbortSignal.timeout(300000)
+    });
+    data = await res.json().catch(() => ({}));
+  } catch (err) {
+    res = { ok: false, status: 0 }; data = { err_msg: err?.name === 'TimeoutError' ? 'took too long' : err?.message };
+  }
+  await db.prepare('DELETE FROM stt_jobs WHERE user_id = ? AND entry_id = ?').bind(userId, entryId).run();
+  const text = res.ok ? deepgramText(data) : '';
+  if (text.length > 50) {
+    let cacheKeys = [];
+    try { cacheKeys = JSON.parse(job.cache_keys || '[]'); } catch { /* none */ }
+    return { status: 'ok', text, cacheKeys };
+  }
+  await resetPending(db, userId, entryId);
+  console.error('Deepgram failed', res.status, JSON.stringify(data).slice(0, 300));
+  const why = res.ok ? 'no speech found' : (data.err_msg || data.message || data.error || `error ${res.status}`);
+  const err = new Error(`Transcription failed (${String(why).slice(0, 140)})`);
+  err.status = 502; err.expose = true;
+  throw err;
 }

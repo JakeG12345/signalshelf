@@ -297,10 +297,11 @@ try {
         return send({ items: [{ id: 'LIKEDAAAAA2', snippet: { title: 'Liked two', channelTitle: 'Chan' }, contentDetails: { duration: 'PT45S' } }] });
       }
       if (u.pathname === '/v1/listen') {
-        const ok = req.method === 'POST' && req.headers.authorization === 'Token dg-test' && JSON.parse(body || '{}').url && u.searchParams.get('callback');
-        if (!ok) return send({ err: 'bad' }, 400);
-        dgCalls.push({ audio: JSON.parse(body).url, callback: u.searchParams.get('callback'), model: u.searchParams.get('model') });
-        return send({ request_id: 'req-1' });
+        const audio = JSON.parse(body || '{}').url;
+        if (req.method !== 'POST' || req.headers.authorization !== 'Token dg-test' || !audio) return send({ err_msg: 'bad request' }, 400);
+        dgCalls.push({ audio, model: u.searchParams.get('model') });
+        if (audio.includes('broken')) return send({ err_code: 'REMOTE_CONTENT_ERROR', err_msg: 'could not download the audio' }, 400);
+        return send({ results: { channels: [{ alternatives: [{ transcript: 'flat', paragraphs: { transcript: '\nWelcome back to the show. Today we talk about laundromats and why they print cash.\n\nFirst, the numbers.' } }] }] } });
       }
       if (u.pathname === '/feed.xml') {
         res.writeHead(200, { 'Content-Type': 'application/rss+xml' });
@@ -497,7 +498,7 @@ try {
       const a3 = await save({ id: 'pod_apple_3', title: 'X', episode_guid: 'nope', feed_url: 'not a url' });
       assert.equal(a3.status, 200); assert.equal(a3.body.entry.transcript_status, 'description');
     });
-    await t('podcasts without a published transcript get transcribed (Deepgram callback)', async () => {
+    await t('podcasts without a published transcript get transcribed (Deepgram), reused, errors shown', async () => {
       const k = (await g('/api/auth/anon', { method: 'POST', headers: ip(81) })).body.key;
       const other = (await g('/api/auth/anon', { method: 'POST', headers: ip(82) })).body.key;
       const saved = await g('/api/ingest', { method: 'POST', headers: as(k), body: JSON.stringify({
@@ -506,22 +507,16 @@ try {
         feed_url: `http://127.0.0.1:${mock.address().port}/feed.xml`, enclosure_url: 'https://cdn.example/ep50.mp3' }) });
       assert.equal(saved.body.entry.transcript_status, 'pending');
       assert.match(saved.body.message, /transcribing/);
-      const job = dgCalls.at(-1);
-      assert.equal(job.audio, 'https://cdn.example/ep50.mp3'); assert.equal(job.model, 'nova-3');
-      const hook = new URL(job.callback);
-      assert.equal(hook.origin, gbase); assert.match(hook.pathname, /^\/hooks\/deepgram\/[0-9a-f]{48}$/);
-      // Re-saving while pending doesn't start a second job
-      await g('/api/ingest', { method: 'POST', headers: as(k), body: JSON.stringify({ id: 'pod_apple_50', source: 'apple_podcasts', title: 'No transcript', transcript: 'Description only', enclosure_url: 'https://cdn.example/ep50.mp3' }) });
-      assert.equal(dgCalls.at(-1), job);
-      const result = { results: { channels: [{ alternatives: [{ transcript: 'flat', paragraphs: { transcript: '\nWelcome back to the show. Today we talk about laundromats and why they print cash.\n\nFirst, the numbers.' } }] }] } };
-      const post = body => fetch(gbase + hook.pathname, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      assert.equal((await post(result)).status, 200);
+      assert.equal(dgCalls.length, 0, 'nothing sent until the app asks');
+      assert.equal((await g('/api/transcribe/pod_apple_50', { method: 'POST', headers: as(other) })).status, 404, 'not your episode');
+      const run = await g('/api/transcribe/pod_apple_50', { method: 'POST', headers: as(k) });
+      assert.equal(run.body.status, 'ok'); assert.equal(run.body.entry.transcript_status, 'ok');
+      assert.equal(dgCalls.at(-1).audio, 'https://cdn.example/ep50.mp3'); assert.equal(dgCalls.at(-1).model, 'nova-3');
       const e = (await g('/api/entries/pod_apple_50', { headers: as(k) })).body;
-      assert.equal(e.transcript_status, 'ok');
       assert.ok(e.transcript.startsWith('Welcome back to the show.') && e.transcript.includes('\n\nFirst, the numbers.'));
       assert.equal((await g('/api/entries?q=laundromats', { headers: as(k) })).body.length, 1, 'searchable');
       assert.equal((await g('/api/entries?q=laundromats', { headers: as(other) })).body.length, 0, 'only the owner');
-      assert.equal((await post(result)).status, 404, 'callback is single use');
+      assert.equal((await g('/api/transcribe/pod_apple_50', { method: 'POST', headers: as(k) })).body.status, 'none', 'job is single use');
       // Someone else saves the same episode: reused from our store, no second transcription
       const before = dgCalls.length;
       const again = await g('/api/ingest', { method: 'POST', headers: as(other), body: JSON.stringify({
@@ -535,7 +530,11 @@ try {
       const third = await g('/api/ingest', { method: 'POST', headers: as(other), body: JSON.stringify({ id: 'pod_apple_60', source: 'apple_podcasts', title: 'Hand', transcript: 'desc', transcript_status: 'description' }) });
       assert.equal(third.body.entry.transcript_status, 'description');
       assert.ok(!(await g('/api/entries/pod_apple_60', { headers: as(other) })).body.transcript.includes('MY-PRIVATE-PASTE'));
-      assert.equal((await fetch(gbase + '/hooks/deepgram/' + 'a'.repeat(48), { method: 'POST', body: '{}' })).status, 404);
+      // Deepgram can't fetch the audio: readable error, episode back to its description
+      await g('/api/ingest', { method: 'POST', headers: as(k), body: JSON.stringify({ id: 'pod_apple_70', source: 'apple_podcasts', title: 'Broken', transcript: 'Desc', transcript_status: 'description', enclosure_url: 'https://cdn.example/broken.mp3' }) });
+      const bad = await g('/api/transcribe/pod_apple_70', { method: 'POST', headers: as(k) });
+      assert.equal(bad.status, 502); assert.match(bad.body.error, /could not download the audio/);
+      assert.equal((await g('/api/entries/pod_apple_70', { headers: as(k) })).body.transcript_status, 'description');
     });
   } finally {
     wg.kill('SIGINT'); setTimeout(() => wg.kill('SIGKILL'), 2000);

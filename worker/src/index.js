@@ -11,7 +11,7 @@ import { renderLanding, renderNotFound, renderPrivacy, renderTerms } from './lan
 import { renderProfileHtml, renderPeopleHtml, publicItem } from '../../shared/profile-render.js';
 import { createAnonymousUser, resolveUser, updateProfile, listPeople, topSignal, userByHandle, followCounts, setFollow, isFollowing, listFollowing, feed, featured, rateLimit, looksLikeKey, createAccount, changePassword, login, logout, googleEnabled, googleStart, googleCallback } from './accounts.js';
 import { YT_STATE_PREFIX, youtubeLikesStart, youtubeLikesCallback, takeYoutubeLikes, searchPodcasts, podcastEpisodes } from './imports.js';
-import { podcastTranscript, startTranscription, finishTranscription, deepgramEnabled, episodeKeys, cachedTranscript, cacheTranscript } from './podcast-transcripts.js';
+import { podcastTranscript, queueTranscription, runTranscription, deepgramEnabled, episodeKeys, cachedTranscript, cacheTranscript } from './podcast-transcripts.js';
 import { captureLink } from '../../shared/capture.js';
 import { supadataProvider } from './transcripts.js';
 import { APP_VERSION, MONETIZATION_MODELS, SOURCES, STATUSES, HttpError } from '../../shared/core.js';
@@ -165,15 +165,26 @@ async function privateApi(request, url, ctx) {
       watched_at: validDate(b.watched_at)
     }));
     if (STATUSES.includes(b.status) && b.status !== entry.status) entry.status = (await store.update(entry.id, { status: b.status })).status;
-    // No published transcript: transcribe the audio in the background (Deepgram calls back when done)
+    // No published transcript: queue speech-to-text; the app runs it next via /api/transcribe/<id>
     if (podcast && entry.transcript_status !== 'ok' && b.enclosure_url && deepgramEnabled(env)) {
       try {
         await rateLimit(db, `stt:${user.id}`, limits.transcriptionsPerUserPerDay, 86400, 'Daily transcription limit reached.');
         // 3. Transcribe the audio
-        if (await startTranscription(env, db, { userId: user.id, entryId: entry.id, audioUrl: b.enclosure_url, origin: url.origin, cacheKeys })) entry.transcript_status = 'pending';
+        if (await queueTranscription(env, db, { userId: user.id, entryId: entry.id, audioUrl: b.enclosure_url, cacheKeys })) entry.transcript_status = 'pending';
       } catch (err) { if (err.status !== 429) console.error(err); }
     }
     return json({ ok: true, entry, message: savedMessage(entry) });
+  }
+
+  if ((m = path.match(/^\/api\/transcribe\/(.+)$/)) && method === 'POST') {
+    const id = decodeURIComponent(m[1]);
+    if (!(await store.get(id))) throw new HttpError(404, 'Not on your shelf.');
+    const r = await runTranscription(env, db, user.id, id);
+    if (r.status === 'ok') {
+      await cacheTranscript(db, r.cacheKeys, r.text, 'deepgram');
+      await store.update(id, { transcript: r.text });
+    }
+    return json({ status: r.status, entry: slim(await store.get(id)) });
   }
 
   if (path === '/api/ingest-url' && method === 'POST') {
@@ -380,18 +391,6 @@ export default {
           const msg = err.status && err.status < 500 ? err.message : 'Google sign-in failed. Try again.';
           return Response.redirect(`${url.origin}/app/#account&error=${encodeURIComponent(msg)}`, 302);
         }
-      }
-      if (path.startsWith('/hooks/deepgram/') && request.method === 'POST') {
-        const data = await request.json().catch(() => null);
-        const done = await finishTranscription(db, path.slice('/hooks/deepgram/'.length), data);
-        if (!done) return json({ ok: false }, 404);
-        const store = createStore(db, done.userId);
-        if (done.text.length > 50) {
-          await cacheTranscript(db, done.cacheKeys, done.text, 'deepgram');
-          await store.update(done.entryId, { transcript: done.text }).catch(() => {});
-        }
-        else await db.prepare("UPDATE entries SET transcript_status = CASE WHEN length(COALESCE(transcript, '')) > 0 THEN 'description' ELSE 'missing' END WHERE user_id = ? AND id = ? AND transcript_status = 'pending'").bind(done.userId, done.entryId).run();
-        return json({ ok: true });
       }
       if (path === '/api/auth/anon' && request.method === 'POST') {
         return json(await createAnonymousUser(db, request, limits), 201);
