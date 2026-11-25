@@ -7,7 +7,7 @@
 //   /mcp/<key>         remote MCP endpoint for Claude
 import { ensureSchema, createStore } from './store.js';
 import { handleMcp } from './mcp.js';
-import { renderLanding, renderNotFound } from './landing.js';
+import { renderLanding, renderNotFound, renderPrivacy } from './landing.js';
 import { renderProfileHtml, renderPeopleHtml, publicItem } from '../../shared/profile-render.js';
 import { createAnonymousUser, resolveUser, updateProfile, listPeople, topSignal, userByHandle, followCounts, setFollow, isFollowing, listFollowing, feed, rateLimit, looksLikeKey, createAccount, changePassword, login, logout, googleEnabled, googleStart, googleCallback } from './accounts.js';
 import { YT_STATE_PREFIX, youtubeLikesStart, youtubeLikesCallback, takeYoutubeLikes, searchPodcasts, podcastEpisodes } from './imports.js';
@@ -297,6 +297,7 @@ export default {
       if (path === '/' || path === '') {
         return html(renderLanding({ origin: url.origin, shelves: (await listPeople(db, { limit: 8 })).filter(p => p.items > 0), top: await topSignal(db) }), 200, { 'Cache-Control': 'public, max-age=60' });
       }
+      if (path === '/privacy' || path === '/privacy/') return html(renderPrivacy(url.origin), 200, { 'Cache-Control': 'public, max-age=3600' });
       if (path === '/people' || path === '/people/') {
         const q = (url.searchParams.get('q') || '').slice(0, 40);
         return html(renderPeopleHtml({ people: await listPeople(db, { q, limit: 60 }), q, origin: url.origin }), 200, { 'Cache-Control': q ? 'no-store' : 'public, max-age=60' });

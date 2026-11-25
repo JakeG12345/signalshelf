@@ -62,6 +62,8 @@ try {
     const landing = await (await fetch(base + '/')).text();
     assert.ok(landing.includes('Track what you watch') && landing.includes('/app/'));
     assert.equal((await fetch(base + '/app', { redirect: 'manual' })).status, 301);
+    const privacy = await (await fetch(base + '/privacy')).text();
+    assert.ok(landing.includes('href="/privacy"') && privacy.includes('Limited Use') && privacy.includes('YouTube Terms of Service'));
     assert.ok((await (await fetch(base + '/app/')).text()).includes('manifest.webmanifest'));
     assert.equal((await fetch(base + '/app/icon-180.png')).headers.get('content-type'), 'image/png');
   });

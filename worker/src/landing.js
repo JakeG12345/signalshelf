@@ -142,7 +142,7 @@ ${FONT_LINKS}
 
   <footer>
     <span>Signal Shelf</span>
-    <a href="https://github.com/JakeG12345/signalshelf">Source on GitHub</a>
+    <span><a href="/privacy">Privacy</a> · <a href="https://github.com/JakeG12345/signalshelf">Source on GitHub</a></span>
   </footer>
 </div>
 <script>
@@ -175,4 +175,39 @@ export function renderNotFound(origin, message = 'This shelf doesn\'t exist or i
   body { min-height:100vh; display:grid; place-items:center; padding:24px; text-align:center; }
   p { color:var(--mute); margin:14px 0 22px; }</style></head>
 <body><div><a class="wordmark" href="${esc(origin)}/">${LOGO_SVG}Signal Shelf</a><p>${esc(message)}</p><a class="btn solid" href="${esc(origin)}/">Make your own shelf</a></div></body></html>`;
+}
+
+export function renderPrivacy(origin) {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Privacy · Signal Shelf</title>${FONT_LINKS}<style>${BASE_CSS}
+  body { padding:32px 24px 64px; }
+  main { max-width:680px; margin:0 auto; }
+  h1 { margin:36px 0 6px; } h2 { font-size:18px; margin:30px 0 6px; }
+  p, li { color:var(--mute); line-height:1.55; } ul { padding-left:20px; }</style></head>
+<body><main><a class="wordmark" href="${esc(origin)}/">${LOGO_SVG}Signal Shelf</a>
+<h1>Privacy</h1><p>Last updated 25 November 2026.</p>
+<h2>What we store</h2>
+<ul>
+<li>What you save: links, titles, creators, transcripts, your ratings, tags, takeaways and notes.</li>
+<li>Your account: a username, an optional name and bio, and a scrambled password if you set one.</li>
+<li>A scrambled form of your network address, used only to limit abuse.</li>
+</ul>
+<h2>What others can see</h2>
+<p>If you have a username, your profile shows what you saved, your ratings, tags and takeaways. Notes and transcripts are never shown to anyone else. You can make your profile private in Account.</p>
+<h2>Google sign-in</h2>
+<p>If you continue with Google we receive your name, email address and Google account ID. We store the account ID and your name. We do not store your email address.</p>
+<h2>YouTube</h2>
+<p>If you import liked videos, Google asks you to let Signal Shelf view your YouTube account. We read your list of liked videos once so you can pick from it. We do not keep access to your account, and the list is deleted as soon as it is shown to you. Only the videos you pick are saved.</p>
+<p>This feature uses YouTube API Services. By using it you agree to the <a href="https://www.youtube.com/t/terms">YouTube Terms of Service</a>, and the <a href="https://policies.google.com/privacy">Google Privacy Policy</a> applies. You can remove access any time in your <a href="https://myaccount.google.com/permissions">Google security settings</a>.</p>
+<p>Signal Shelf's use of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
+<h2>Who else handles data</h2>
+<ul>
+<li>Cloudflare hosts the site and database.</li>
+<li>Supadata fetches video transcripts. It receives the video link, nothing about you.</li>
+<li>Apple's podcast directory answers show searches. It receives the search words, nothing about you.</li>
+</ul>
+<p>We do not sell data or show ads.</p>
+<h2>Your data</h2>
+<p>In Account you can download everything or delete your shelf. Deleting removes your account and all of its data.</p>
+</main></body></html>`;
 }
