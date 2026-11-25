@@ -154,7 +154,8 @@ export function applePodcastsQuery(episodeCols, podcastCols, limit = 300) {
   return `SELECT ${e('ZUUID')} AS uuid, ${e('ZTITLE')} AS title, ${p('ZTITLE')} AS show, ${p('ZAUTHOR')} AS author,
       ${e('ZWEBPAGEURL')} AS url, ${e('ZDURATION')} AS duration, ${e('ZLASTDATEPLAYED')} AS last_played,
       ${e('ZITEMDESCRIPTIONWITHOUTHTML')} AS description, ${p('ZIMAGEURL')} AS image,
-      ${e('ZSTORETRACKID')} AS store_id, ${p('ZSTORECOLLECTIONID')} AS show_store_id
+      ${e('ZSTORETRACKID')} AS store_id, ${p('ZSTORECOLLECTIONID')} AS show_store_id,
+      ${p('ZFEEDURL')} AS feed_url, ${e('ZGUID')} AS guid, ${e('ZENCLOSUREURL')} AS enclosure
     FROM ZMTEPISODE e LEFT JOIN ZMTPODCAST p ON e.ZPODCAST = p.Z_PK
     WHERE ${played}
     ORDER BY ${episodeCols.includes('ZLASTDATEPLAYED') ? 'e.ZLASTDATEPLAYED DESC' : 'e.Z_PK DESC'} LIMIT ${Number(limit) || 300}`;
@@ -172,7 +173,10 @@ export function parseApplePodcastRows(rows) {
       duration_sec: r.duration ? Math.round(r.duration) : null,
       watched_at: coreDataToIso(r.last_played),
       thumbnail: /^https:\/\//.test(r.image || '') ? r.image : null,
-      description: String(r.description || '').trim()
+      description: String(r.description || '').trim(),
+      feed_url: /^https?:\/\//.test(r.feed_url || '') ? r.feed_url : null,
+      episode_guid: r.guid ? String(r.guid) : null,
+      enclosure_url: /^https?:\/\//.test(r.enclosure || '') ? r.enclosure : null
     };
   });
 }

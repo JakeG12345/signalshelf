@@ -102,13 +102,15 @@ export async function searchPodcasts(env, request, q) {
 export async function podcastEpisodes(env, request, id) {
   if (!/^\d{1,15}$/.test(String(id || ''))) throw new HttpError(400, 'Unknown show.');
   const data = await itunes(env, '/lookup', { id: String(id), entity: 'podcastEpisode', limit: '100', country: country(request) });
+  const show = (data.results || []).find(r => r.kind === 'podcast' || r.wrapperType === 'track' && r.feedUrl);
   return (data.results || []).filter(r => r.kind === 'podcast-episode' && r.trackId).map(r => {
     const description = String(r.description || r.shortDescription || '').trim().slice(0, 20000);
     return {
       key: `pod_apple_${r.trackId}`, kind: 'podcast', id: `pod_apple_${r.trackId}`, title: r.trackName || 'Untitled',
       creator: r.collectionName || '', url: r.trackViewUrl || null, watched_at: null, published_at: r.releaseDate || null,
       duration_sec: r.trackTimeMillis ? Math.round(r.trackTimeMillis / 1000) : null,
-      thumbnail: https(r.artworkUrl600 || r.artworkUrl160), description
+      thumbnail: https(r.artworkUrl600 || r.artworkUrl160), description,
+      feed_url: show?.feedUrl || r.feedUrl || null, episode_guid: r.episodeGuid || null, enclosure_url: r.episodeUrl || null
     };
   });
 }

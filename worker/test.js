@@ -7,6 +7,7 @@ import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import http from 'http';
+import { transcriptToText, transcriptLinks, itemMatches } from './src/podcast-transcripts.js';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const PORT = 8790 + Math.floor(Math.random() * 100);
@@ -67,6 +68,16 @@ try {
     assert.ok(landing.includes('href="/terms"') && (await (await fetch(base + '/terms')).text()).includes('YouTube Terms of Service'));
     assert.ok((await (await fetch(base + '/app/')).text()).includes('manifest.webmanifest'));
     assert.equal((await fetch(base + '/app/icon-180.png')).headers.get('content-type'), 'image/png');
+  });
+  await t('podcast transcript formats to plain text', async () => {
+    assert.equal(transcriptToText('WEBVTT\n\nNOTE hi\n\n00:00.000 --> 00:01.000\n<v Ann>Hello &amp; welcome\n\n00:01.000 --> 00:02.000\nHello &amp; welcome\n\n00:02.000 --> 00:03.000\nto the show', 'text/vtt'), 'Hello & welcome to the show');
+    assert.equal(transcriptToText('1\r\n00:00:00,000 --> 00:00:01,000\r\nFirst line\r\n\r\n2\r\n00:00:01,000 --> 00:00:02,000\r\nSecond line', 'application/srt'), 'First line Second line');
+    assert.equal(transcriptToText(JSON.stringify({ version: '1.0.0', segments: [{ speaker: 'A', body: 'One' }, { body: 'Two' }] }), 'application/json'), 'One Two');
+    assert.equal(transcriptToText('<html><style>p{}</style><p>Hi <b>there</b></p><p>friend</p></html>', 'text/html'), 'Hi there friend');
+    const item = '<item><title><![CDATA[Ep 1]]></title><guid>abc</guid><enclosure url="https://x.com/a.mp3?u=1&amp;v=2"/><podcast:transcript url="https://x.com/t.html" type="text/html"/><podcast:transcript url="https://x.com/t.srt" type="application/srt" language="es"/><podcast:transcript url="https://x.com/t.vtt" type="text/vtt"/></item>';
+    assert.deepEqual(transcriptLinks(item).map(l => l.url), ['https://x.com/t.vtt', 'https://x.com/t.html', 'https://x.com/t.srt']);
+    assert.ok(itemMatches(item, { guid: 'abc' }) && itemMatches(item, { enclosure: 'https://x.com/a.mp3' }) && itemMatches(item, { title: 'ep 1' }));
+    assert.ok(!itemMatches(item, { guid: 'zzz', title: 'Other' }));
   });
   await t('users are isolated, even for the same video', async () => {
     const body = id => JSON.stringify({ id, title: 'AI agency to $30k/mo', creator: 'Liam', url: 'https://www.youtube.com/watch?v=AAAAAAAAAAA', transcript: 'we sell chatbots to dentists' });
@@ -254,6 +265,20 @@ try {
           { id: 'bad id', snippet: { title: 'skip me' } }] });
         return send({ items: [{ id: 'LIKEDAAAAA2', snippet: { title: 'Liked two', channelTitle: 'Chan' }, contentDetails: { duration: 'PT45S' } }] });
       }
+      if (u.pathname === '/feed.xml') {
+        res.writeHead(200, { 'Content-Type': 'application/rss+xml' });
+        const pad = '<item><title>Filler</title><guid>f</guid><description>' + 'x'.repeat(200000) + '</description></item>';
+        return res.end(`<?xml version="1.0"?><rss xmlns:podcast="https://podcastindex.org/namespace/1.0"><channel><title>Show</title>
+          <item><title>Has transcript &amp; more</title><guid isPermaLink="false"><![CDATA[ep-guid-1]]></guid>
+            <enclosure url="https://cdn.example/ep1.mp3?tracking=1" type="audio/mpeg"/>
+            <podcast:transcript url="http://127.0.0.1:${mock.address().port}/t1.json" type="application/json"/>
+            <podcast:transcript type="text/vtt" url="http://127.0.0.1:${mock.address().port}/t1.vtt"/></item>
+          ${pad}${pad}
+          <item><title>No transcript</title><guid>ep-guid-2</guid></item></channel></rss>`);
+      }
+      if (u.pathname === '/t1.vtt') { res.writeHead(200, { 'Content-Type': 'text/vtt' });
+        return res.end('WEBVTT\n\n1\n00:00:00.000 --> 00:00:04.000\n<v Sam>We started a laundromat roll-up in Ohio.\n\n2\n00:00:04.000 --> 00:00:08.000\n' + 'It made money every month. '.repeat(20)); }
+      if (u.pathname === '/t1.json') { res.writeHead(500); return res.end('down'); }
       if (u.pathname === '/search' && u.searchParams.get('term') === 'broken') { res.writeHead(403, { 'Content-Type': 'text/html' }); return res.end('<html>nope</html>'); }
       if (u.pathname === '/search' && u.searchParams.get('term') === 'odd') { res.writeHead(200, { 'Content-Type': 'text/html' }); return res.end('<html>odd</html>'); }
       if (u.pathname === '/search') return send({ results: [{ collectionId: 42, collectionName: 'My First Million', artistName: 'Hubspot', artworkUrl100: 'https://img.example/a.jpg' }, { wrapperType: 'junk' }] });
@@ -430,6 +455,23 @@ try {
       assert.ok(!picks.includes('Three high signal') && !landing.includes('Private pick'));
       assert.ok(landing.includes('Three high signal'), 'runner-up stays in top rated');
       assert.ok(!landing.includes('FEAT-NOTE') && !landing.includes('FEAT-TRANSCRIPT'), 'no notes or transcripts');
+    });
+    await t('podcast transcripts: real transcript from the show feed, description when there is none', async () => {
+      const k = (await g('/api/auth/anon', { method: 'POST', headers: ip(80) })).body.key;
+      const feed = `http://127.0.0.1:${mock.address().port}/feed.xml`;
+      const save = body => g('/api/ingest', { method: 'POST', headers: as(k), body: JSON.stringify({ source: 'apple_podcasts', creator: 'Show', url: 'https://podcasts.apple.com/x', transcript: 'Just the description', transcript_status: 'description', feed_url: feed, ...body }) });
+      // Matched by audio file (query string ignored); JSON link fails, falls back to the VTT
+      const a1 = await save({ id: 'pod_apple_1', title: 'Renamed in Apple', enclosure_url: 'https://cdn.example/ep1.mp3' });
+      assert.equal(a1.body.entry.transcript_status, 'ok');
+      const full = (await g('/api/entries/pod_apple_1', { headers: as(k) })).body;
+      assert.ok(full.transcript.startsWith('We started a laundromat roll-up in Ohio. It made money every month.'), full.transcript.slice(0, 80));
+      assert.ok(!full.transcript.includes('-->') && !full.transcript.includes('<v'));
+      // Episode with no published transcript keeps its description; one far down the feed is still found
+      const a2 = await save({ id: 'pod_apple_2', title: 'No transcript', episode_guid: 'ep-guid-2' });
+      assert.equal(a2.body.entry.transcript_status, 'description');
+      // Bad feed address: still saves
+      const a3 = await save({ id: 'pod_apple_3', title: 'X', episode_guid: 'nope', feed_url: 'not a url' });
+      assert.equal(a3.status, 200); assert.equal(a3.body.entry.transcript_status, 'description');
     });
   } finally {
     wg.kill('SIGINT'); setTimeout(() => wg.kill('SIGKILL'), 2000);

@@ -16,7 +16,7 @@ Owner: Ryan (GitHub JakeG12345). Built as day 1 of a "launch a product every day
 
 | Path | What |
 |---|---|
-| `worker/` | **Production backend**: Cloudflare Worker + D1. `src/index.js` routes, `store.js` (D1, schema + migrations in `ensureSchema`), `accounts.js` (guest accounts, passwords, sessions, follows, feed, people, rate limits), `mcp.js` (remote MCP, Streamable HTTP, JSON responses), `landing.js`, `transcripts.js` (Supadata), `imports.js` (YouTube liked videos via Google OAuth, podcast show search via Apple's directory; the app calls Apple from the browser (JSONP) because Apple returns 429 to Workers, server endpoints are the fallback). |
+| `worker/` | **Production backend**: Cloudflare Worker + D1. `src/index.js` routes, `store.js` (D1, schema + migrations in `ensureSchema`), `accounts.js` (guest accounts, passwords, sessions, follows, feed, people, rate limits), `mcp.js` (remote MCP, Streamable HTTP, JSON responses), `landing.js`, `transcripts.js` (Supadata), `podcast-transcripts.js` (real podcast transcripts from the show's RSS `<podcast:transcript>` tag, free, streamed so big feeds stop early), `imports.js` (YouTube liked videos via Google OAuth, podcast show search via Apple's directory; the app calls Apple from the browser (JSONP) because Apple returns 429 to Workers, server endpoints are the fallback). |
 | `server/public/` | The web app (single `index.html`, inline CSS/JS) + PWA manifest/icons, `importers.js` (Takeout / YouTube history / Apple Podcasts parsers), `vendor/sql-wasm.*` (sql.js for reading MTLibrary.sqlite on-device). Served by the Worker at `/app/`. |
 | `shared/` | Code used by both the Worker and the Mac server: `core.js` (all entry SQL builders, normalisers, `userId`-scoped variants), `capture.js` + `youtube.js` (link capture), `theme.js` (design tokens, signal-bars, logo), `profile-render.js`, `shelf-render.js`. |
 | `extension/` | Chrome MV3 extension: save + transcript (caption files, then YouTube's transcript panel), auto-capture (on by default for new installs, 2 min), "Pick from YouTube history" (`picker.html`), server URL + key settings. |
@@ -26,7 +26,7 @@ Owner: Ryan (GitHub JakeG12345). Built as day 1 of a "launch a product every day
 
 ```bash
 npm ci && npm test                         # 33 checks: shared logic, importers, local server, stdio MCP
-cd worker && npm ci && npm test            # 29 checks: multi-user Worker under wrangler dev + remote MCP + Google sign-in, YouTube likes and podcast search (local mock)
+cd worker && npm ci && npm test            # 31 checks: multi-user Worker under wrangler dev + remote MCP + Google sign-in, YouTube likes and podcast search (local mock)
 cd worker && npm run dev                   # local cloud dev server
 ```
 
@@ -40,7 +40,7 @@ Check a deploy: `curl -s https://api.github.com/repos/JakeG12345/signalshelf/act
 - **Every query is user-scoped** in the Worker (`createStore(db, userId)`, `buildEntriesQuery({ userId })`). Entry ids (`yt_<id>`, `pod_<uuid>`, `web_<hash>`) are only unique per user.
 - **Re-captures never overwrite** a user's rating, tags, takeaways or notes, or a transcript with an empty one (`buildUpsert`).
 - **Instant UI:** the app updates the screen first and syncs in the background with rollback (`sync()`, `replaceCard()`, cached first paint). Keep new interactions optimistic.
-- **Transcripts:** YouTube blocks cloud IPs, so the Worker uses Supadata (`mode=native`, 1 credit per new video; skipped when a transcript already exists). Free plan = 100/month; transcripts are free for users for now. When credits run out, saves continue without a transcript.
+- **Transcripts:** YouTube blocks cloud IPs, so the Worker uses Supadata (`mode=native`, 1 credit per new video; skipped when a transcript already exists). Free plan = 100/month; transcripts are free for users for now. When credits run out, saves continue without a transcript. Podcasts: the app sends `feed_url`, `episode_guid`, `enclosure_url` with each save and the Worker fetches the show's published transcript; shows that don't publish one keep the description (`transcript_status = 'description'`). Re-saving an episode upgrades it.
 - **No history APIs exist:** YouTube removed watch history from its API in 2016; Apple Podcasts has no API. History import = Chrome extension (live), Google Takeout file, or the Mac Podcasts library file. Easier stand-ins: YouTube liked videos (`youtube.readonly`, token never stored, list parked once in `user_settings`) and podcast show search with episode ticking.
 - **Accounts:** guests get a key instantly (no sign-up); sign-up adds username + password (PBKDF2, 25k iterations for Workers CPU limits) or "Continue with Google" (OAuth code flow, `users.google_sub`, `oauth_states`; auto username; guest shelf is upgraded in place) and makes a public profile (private toggle available). Keys are stored hashed; the private link `/app/#k=<key>` signs a device in.
 - **Rate limits** live in D1 (`rateLimit`): guest creation per IP, saves per day, writes per hour, logins, items per user (5000).

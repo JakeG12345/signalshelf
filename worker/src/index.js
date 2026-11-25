@@ -11,6 +11,7 @@ import { renderLanding, renderNotFound, renderPrivacy, renderTerms } from './lan
 import { renderProfileHtml, renderPeopleHtml, publicItem } from '../../shared/profile-render.js';
 import { createAnonymousUser, resolveUser, updateProfile, listPeople, topSignal, userByHandle, followCounts, setFollow, isFollowing, listFollowing, feed, featured, rateLimit, looksLikeKey, createAccount, changePassword, login, logout, googleEnabled, googleStart, googleCallback } from './accounts.js';
 import { YT_STATE_PREFIX, youtubeLikesStart, youtubeLikesCallback, takeYoutubeLikes, searchPodcasts, podcastEpisodes } from './imports.js';
+import { podcastTranscript } from './podcast-transcripts.js';
 import { captureLink } from '../../shared/capture.js';
 import { supadataProvider } from './transcripts.js';
 import { APP_VERSION, MONETIZATION_MODELS, SOURCES, STATUSES, HttpError } from '../../shared/core.js';
@@ -138,7 +139,13 @@ async function privateApi(request, url, ctx) {
 
   if (path === '/api/ingest' && method === 'POST') {
     const b = await readJson(request);
-    if (!(await store.get(String(b.id || '')))) await guardCapture();
+    const existing = await store.get(String(b.id || ''));
+    if (!existing) await guardCapture();
+    // Podcasts: swap the description for the show's published transcript when there is one
+    if (b.source === 'apple_podcasts' && b.feed_url && existing?.transcript_status !== 'ok') {
+      const text = await podcastTranscript({ feedUrl: b.feed_url, guid: b.episode_guid, enclosure: b.enclosure_url, title: b.title });
+      if (text) { b.transcript = text; b.transcript_status = 'ok'; }
+    }
     const entry = slim(await store.upsert({
       id: b.id, source: b.source || 'youtube', title: String(b.title || '').trim(), creator: b.creator, url: b.url,
       duration_sec: b.duration_sec, transcript: b.transcript, published_at: b.published_at || null,

@@ -1102,7 +1102,9 @@ async function podSearch(q) {
 async function podEpisodes(id) {
   try {
     const data = await itunesJsonp('/lookup', { id, entity: 'podcastEpisode', limit: '100' });
+    const show = (data.results || []).find(r => r.kind === 'podcast' || r.wrapperType === 'track' && r.feedUrl);
     return (data.results || []).filter(r => r.kind === 'podcast-episode' && r.trackId).map(r => ({
+      feed_url: show?.feedUrl || r.feedUrl || null, episode_guid: r.episodeGuid || null, enclosure_url: r.episodeUrl || null,
       key: `pod_apple_${r.trackId}`, kind: 'podcast', id: `pod_apple_${r.trackId}`, title: r.trackName || 'Untitled',
       creator: r.collectionName || '', url: r.trackViewUrl || null, watched_at: null, published_at: r.releaseDate || null,
       duration_sec: r.trackTimeMillis ? Math.round(r.trackTimeMillis / 1000) : null,
@@ -1188,7 +1190,8 @@ $('#i-save').addEventListener('click', async () => {
         await api('/api/ingest', { method: 'POST', body: JSON.stringify({
           id: i.id, source: 'apple_podcasts', title: i.title, creator: i.creator, url: i.url, duration_sec: i.duration_sec,
           watched_at: i.watched_at, published_at: i.published_at, thumbnail: i.thumbnail, transcript: i.description,
-          transcript_status: i.description ? 'description' : 'missing' }) });
+          transcript_status: i.description ? 'description' : 'missing',
+          feed_url: i.feed_url, episode_guid: i.episode_guid, enclosure_url: i.enclosure_url }) });
       } else {
         await api('/api/ingest-url', { method: 'POST', body: JSON.stringify({ url: i.url, watched_at: i.watched_at }) });
       }
