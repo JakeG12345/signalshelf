@@ -153,6 +153,7 @@
   details summary { cursor:pointer; font-size:14px; font-weight:700; margin-top:22px; }
   .warnbox { border-left:3px solid var(--warn); background:var(--panel); color:var(--warn); padding:8px 12px; font-size:14px; margin-top:12px; }
 
+  @media (display-mode: standalone) { .container { padding-top:calc(34px + env(safe-area-inset-top)) !important; } }
   .toast { position:fixed; bottom:calc(20px + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%) translateY(20px); background:var(--ink); color:var(--plate); padding:10px 16px; border-radius:4px; opacity:0; transition:opacity .2s, transform .2s; z-index:20; max-width:90vw; pointer-events:none; font-weight:500; }
   .toast.show { opacity:1; transform:translateX(-50%); }
   .toast.err { background:var(--red); color:#fff; }
@@ -202,7 +203,7 @@
     .fitem .add { grid-column:1 / -1; justify-self:start; }
     .hbtn { padding:7px 11px; font-size:14px; }
     .grid2 { grid-template-columns:1fr; }
-    .container { padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom)); }
+    .container { padding:calc(34px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom)); }
     header { margin-bottom:16px; }
     header .row button { padding:7px 11px; font-size:14px; }
     .addbar .addwrap, .addbar input, .filters input { min-width:0; flex-basis:100%; }
