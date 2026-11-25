@@ -146,6 +146,9 @@
   .src { margin-top:14px; }
   .src > div { border:1.5px solid var(--line); border-radius:6px; padding:16px; background:var(--panel); }
   .src h3 { margin:0 0 4px; font-size:17px; }
+  .src details summary { margin-top:14px; }
+  .picklist li.show { display:grid; grid-template-columns:44px 1fr; gap:10px; align-items:center; padding:8px 2px; border-bottom:1px solid var(--line); cursor:pointer; }
+  .picklist li.show img { width:44px; height:44px; border-radius:4px; background:var(--line); object-fit:cover; }
   .src p { margin:0 0 12px; color:var(--mute); font-size:14px; }
   .src ol { margin:0 0 12px; padding-left:20px; font-size:14px; color:var(--mute); }
   .src code { font-size:12px; word-break:break-all; background:var(--plate); padding:1px 4px; border-radius:3px; }
@@ -403,27 +406,39 @@
       </div>
       <div class="src" id="i-src-yt" hidden>
         <div>
-          <p id="i-ext">Fastest: in the Chrome extension, click <b>Pick from YouTube history</b>.</p>
-          <p id="i-ext-or">Or use your Google history file:</p>
-          <ol>
-            <li>Open <a href="https://takeout.google.com/settings/takeout/custom/youtube" target="_blank" rel="noopener">Google Takeout for YouTube</a>.</li>
-            <li>Under <b>All YouTube data included</b>, keep only <b>history</b>. Create the export.</li>
-            <li>When Google emails it, unzip and choose <code>watch-history</code> here.</li>
-          </ol>
-          <label class="filepick"><input type="file" id="i-yt" accept=".json,.html,.htm,application/json,text/html"><span class="primary" style="display:inline-block;background:var(--ink);color:var(--plate);padding:9px 14px;border-radius:4px;font-weight:650">Choose watch-history file</span></label>
+          <div id="i-likes" hidden>
+            <button type="button" class="primary" id="i-likes-btn" style="width:100%">Pick from your liked videos</button>
+            <p style="margin:10px 0 0">Google asks to let Signal Shelf see your YouTube account. It only reads your likes, once.</p>
+          </div>
+          <p id="i-ext" style="margin-top:14px">On a computer, the Chrome extension can <b>Pick from YouTube history</b>.</p>
+          <details id="i-takeout">
+            <summary>Use your full watch history file</summary>
+            <ol style="margin-top:10px">
+              <li>Open <a href="https://takeout.google.com/settings/takeout/custom/youtube" target="_blank" rel="noopener">Google Takeout for YouTube</a>.</li>
+              <li>Under <b>All YouTube data included</b>, keep only <b>history</b>. Create the export.</li>
+              <li>When Google emails it, unzip and choose <code>watch-history</code> here.</li>
+            </ol>
+            <label class="filepick"><input type="file" id="i-yt" accept=".json,.html,.htm,application/json,text/html"><span class="primary" style="display:inline-block;background:var(--ink);color:var(--plate);padding:9px 14px;border-radius:4px;font-weight:650">Choose watch-history file</span></label>
+            <p style="margin:12px 0 0">The file stays on your device.</p>
+          </details>
         </div>
       </div>
       <div class="src" id="i-src-pod" hidden>
         <div>
-          <ol>
-            <li>On your Mac, quit the Podcasts app.</li>
-            <li>In Finder, choose <b>Go → Go to Folder</b> and paste:<br><code>~/Library/Group Containers/243LU875E5.groups.com.apple.podcasts/Documents</code></li>
-            <li>Choose <code>MTLibrary.sqlite</code> here.</li>
-          </ol>
-          <label class="filepick"><input type="file" id="i-pod" accept=".sqlite,.db,application/x-sqlite3,application/vnd.sqlite3"><span class="primary" style="display:inline-block;background:var(--ink);color:var(--plate);padding:9px 14px;border-radius:4px;font-weight:650">Choose MTLibrary.sqlite</span></label>
+          <input id="i-podq" type="search" placeholder="Search for a show" autocomplete="off" style="width:100%">
+          <ul class="picklist" id="i-shows" style="border-top:0;margin-top:8px"></ul>
+          <details id="i-podfile">
+            <summary>Use your Mac's Podcasts library</summary>
+            <ol style="margin-top:10px">
+              <li>On your Mac, quit the Podcasts app.</li>
+              <li>In Finder, choose <b>Go → Go to Folder</b> and paste:<br><code>~/Library/Group Containers/243LU875E5.groups.com.apple.podcasts/Documents</code></li>
+              <li>Choose <code>MTLibrary.sqlite</code> here.</li>
+            </ol>
+            <label class="filepick"><input type="file" id="i-pod" accept=".sqlite,.db,application/x-sqlite3,application/vnd.sqlite3"><span class="primary" style="display:inline-block;background:var(--ink);color:var(--plate);padding:9px 14px;border-radius:4px;font-weight:650">Choose MTLibrary.sqlite</span></label>
+            <p style="margin:12px 0 0">The file stays on your device.</p>
+          </details>
         </div>
       </div>
-      <p class="meta" id="i-note" hidden style="margin-top:12px">The file stays on your device. Only what you pick is saved.</p>
     </div>
 
     <div id="i-pick" hidden>
@@ -973,17 +988,25 @@ const loadImporters = async () => (importers ||= await import('./importers.js'))
 // Phones and tablets can't reach the Mac Podcasts library or run the Chrome extension.
 const IS_MOBILE = /iPhone|iPad|iPod|Android/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent));
 function importSource(src) {
-  $('#i-choose').hidden = !!src || IS_MOBILE;
+  $('#i-choose').hidden = !!src;
   $('#i-src-yt').hidden = src !== 'yt';
   $('#i-src-pod').hidden = src !== 'pod';
-  $('#i-note').hidden = !src;
-  $('#i-ext').hidden = $('#i-ext-or').hidden = IS_MOBILE;
+  const likes = !!META.googleSignIn;
+  $('#i-likes').hidden = !likes;
+  $('#i-ext').hidden = IS_MOBILE;
+  $('#i-takeout').open = !likes;
+  const cloud = META.mode === 'cloud';          // show search needs the cloud backend
+  $('#i-podq').hidden = $('#i-shows').hidden = !cloud;
+  $('#i-podfile').hidden = IS_MOBILE && cloud;
+  $('#i-podfile').open = !cloud;
+  IMPORT.src = src;
+  if (src === 'pod' && cloud) setTimeout(() => $('#i-podq').focus(), 50);
   $('#i-title').textContent = src === 'yt' ? 'Import from YouTube' : src === 'pod' ? 'Import from Podcasts' : 'Import';
 }
 $('#i-choose').addEventListener('click', e => { const b = e.target.closest('[data-src]'); if (b) importSource(b.dataset.src); });
 function openImport() {
-  $('#i-sources').hidden = false; $('#i-pick').hidden = true; importSource(IS_MOBILE ? 'yt' : null);
-  $('#i-yt').value = ''; $('#i-pod').value = '';
+  $('#i-sources').hidden = false; $('#i-pick').hidden = true; importSource(null);
+  $('#i-yt').value = ''; $('#i-pod').value = ''; $('#i-podq').value = ''; $('#i-shows').innerHTML = '';
   $('#import').classList.add('open'); document.body.style.overflow = 'hidden';
 }
 
@@ -997,6 +1020,7 @@ async function showCandidates(items, label) {
   $('#i-title').textContent = label;
   $('#i-sources').hidden = true; $('#i-pick').hidden = false; $('#i-progress').hidden = true;
   $('#i-range').value = items.some(i => i.watched_at) ? '30' : '0';
+  $('#i-range').hidden = !items.some(i => i.watched_at);
   renderCandidates();
 }
 
@@ -1032,7 +1056,50 @@ async function readFile(input) {
 }
 
 $('#btn-import').addEventListener('click', openImport);
-$('#i-back').addEventListener('click', () => { $('#i-sources').hidden = false; $('#i-pick').hidden = true; importSource(IS_MOBILE ? 'yt' : null); });
+$('#i-back').addEventListener('click', () => { $('#i-sources').hidden = false; $('#i-pick').hidden = true; importSource(IMPORT.src || null); });
+
+// YouTube likes: Google asks for read-only access, then sends the browser back to #import=likes
+$('#i-likes-btn').addEventListener('click', async () => {
+  try { location.href = (await api('/api/import/youtube/start', { method: 'POST' })).url; }
+  catch (err) { toast(err.message, true); }
+});
+async function openLikes() {
+  openImport(); importSource('yt');
+  try {
+    const { items } = await api('/api/import/youtube/likes');
+    if (!items.length) return toast('No liked videos found on that YouTube account.', true);
+    await showCandidates(items, 'Liked videos');
+  } catch (err) { toast(err.message, true); }
+}
+
+// Podcasts: search Apple's directory for a show, then tick episodes
+let podTimer, podSeq = 0;
+$('#i-podq').addEventListener('input', () => {
+  clearTimeout(podTimer);
+  const q = $('#i-podq').value.trim();
+  if (q.length < 2) { $('#i-shows').innerHTML = ''; return; }
+  podTimer = setTimeout(async () => {
+    const seq = ++podSeq;
+    try {
+      const shows = await api('/api/podcasts/search?q=' + encodeURIComponent(q));
+      if (seq !== podSeq) return;
+      $('#i-shows').innerHTML = shows.map(sh => `<li class="show" data-show="${esc(sh.id)}" data-title="${esc(sh.title)}">
+        ${safeUrl(sh.thumbnail) ? `<img src="${esc(sh.thumbnail)}" alt="" loading="lazy">` : '<span></span>'}
+        <span><span class="t">${esc(sh.title)}</span><br><span class="s">${esc(sh.creator)}</span></span></li>`).join('')
+        || '<li class="meta" style="padding:12px 0">No shows found.</li>';
+    } catch (err) { if (seq === podSeq) toast(err.message, true); }
+  }, 250);
+});
+$('#i-shows').addEventListener('click', async e => {
+  const li = e.target.closest('[data-show]'); if (!li) return;
+  li.style.opacity = '.5';
+  try {
+    const eps = await api('/api/podcasts/episodes?id=' + encodeURIComponent(li.dataset.show));
+    if (!eps.length) return toast('No episodes found for that show.', true);
+    await showCandidates(eps.map(ep => ({ ...ep, length: ep.published_at ? fmtDate(ep.published_at) : '' })), li.dataset.title);
+  } catch (err) { toast(err.message, true); }
+  finally { li.style.opacity = ''; }
+});
 $('#i-range').addEventListener('change', renderCandidates);
 $('#i-q').addEventListener('input', renderCandidates);
 $('#i-all').addEventListener('click', () => { IMPORT.shown.forEach(i => { if (!IMPORT.saved.has(i.key)) IMPORT.selected.add(i.key); }); renderCandidates(); });
@@ -1081,7 +1148,7 @@ $('#i-save').addEventListener('click', async () => {
       if (i.kind === 'podcast') {
         await api('/api/ingest', { method: 'POST', body: JSON.stringify({
           id: i.id, source: 'apple_podcasts', title: i.title, creator: i.creator, url: i.url, duration_sec: i.duration_sec,
-          watched_at: i.watched_at, thumbnail: i.thumbnail, transcript: i.description,
+          watched_at: i.watched_at, published_at: i.published_at, thumbnail: i.thumbnail, transcript: i.description,
           transcript_status: i.description ? 'description' : 'missing' }) });
       } else {
         await api('/api/ingest-url', { method: 'POST', body: JSON.stringify({ url: i.url, watched_at: i.watched_at }) });
@@ -1177,11 +1244,16 @@ async function followFromLink(handle) {
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
   return { k: p.get('k'), add: p.get('add'), open: p.get('open'), login: p.has('login') ? '1' : null,
-    follow: p.get('follow'), account: p.has('account') ? '1' : null, error: p.get('error'), google: p.get('google') };
+    follow: p.get('follow'), account: p.has('account') ? '1' : null, error: p.get('error'), google: p.get('google'), imp: p.has('import') ? (p.get('import') || '1') : null };
 }
 
 async function handleHash() {
-  const { k, add, open, login, follow, account, error, google } = readHash();
+  const { k, add, open, login, follow, account, error, google, imp } = readHash();
+  if (imp) {
+    history.replaceState(null, '', location.pathname);
+    if (imp === 'likes') return openLikes();
+    openImport(); importSource('yt'); if (error) toast(error, true); return;
+  }
   if ((login || account) && META.mode === 'cloud') { history.replaceState(null, '', location.pathname); openAccount(!!login); if (error) toast(error, true); return; }
   if (follow && META.mode === 'cloud') { history.replaceState(null, '', location.pathname); return followFromLink(follow); }
   if (!k && !add && !open && !google) return;

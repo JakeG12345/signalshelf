@@ -238,8 +238,23 @@ try {
   });
 
   // ---------- Google sign-in, against a local mock of Google's token endpoint ----------
+  const mockCalls = [];
   const mock = http.createServer((req, res) => {
     let body = ''; req.on('data', d => (body += d)).on('end', () => {
+      const u = new URL(req.url, 'http://x');
+      const send = (o, status = 200) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
+      mockCalls.push(u.pathname + u.search);
+      if (u.pathname === '/youtube/v3/videos') {
+        if (req.headers.authorization !== 'Bearer x' || u.searchParams.get('myRating') !== 'like') return send({ error: 'no' }, 403);
+        if (!u.searchParams.get('pageToken')) return send({ nextPageToken: 'p2', items: [
+          { id: 'LIKEDAAAAA1', snippet: { title: 'Liked one', channelTitle: 'Chan' }, contentDetails: { duration: 'PT1H2M3S' } },
+          { id: 'bad id', snippet: { title: 'skip me' } }] });
+        return send({ items: [{ id: 'LIKEDAAAAA2', snippet: { title: 'Liked two', channelTitle: 'Chan' }, contentDetails: { duration: 'PT45S' } }] });
+      }
+      if (u.pathname === '/search') return send({ results: [{ collectionId: 42, collectionName: 'My First Million', artistName: 'Hubspot', artworkUrl100: 'https://img.example/a.jpg' }, { wrapperType: 'junk' }] });
+      if (u.pathname === '/lookup') return send({ results: [
+        { wrapperType: 'track', kind: 'podcast', collectionId: 42 },
+        { kind: 'podcast-episode', trackId: 9001, trackName: 'Ep one', collectionName: 'My First Million', trackViewUrl: 'https://podcasts.apple.com/us/podcast/x/id42?i=9001', releaseDate: '2026-11-01T00:00:00Z', trackTimeMillis: 3600000, description: 'PUBLIC-DESC', artworkUrl600: 'http://insecure.example/a.jpg' }] });
       const p = new URLSearchParams(body);
       if (p.get('client_secret') !== 'test-secret' || p.get('grant_type') !== 'authorization_code' || !p.get('redirect_uri').endsWith('/auth/google/callback')) {
         res.writeHead(400); return res.end('{"error":"invalid_client"}');
@@ -257,7 +272,8 @@ try {
   const gpersist = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-d1g-'));
   const wg = spawn('npx', ['wrangler', 'dev', '--local', '--port', String(GPORT), '--ip', '127.0.0.1', '--persist-to', gpersist,
     '--var', 'GOOGLE_CLIENT_ID:test-client', '--var', 'GOOGLE_CLIENT_SECRET:test-secret',
-    '--var', `GOOGLE_TOKEN_URL:http://127.0.0.1:${mock.address().port}/token`, '--show-interactive-dev-session=false'],
+    '--var', `GOOGLE_TOKEN_URL:http://127.0.0.1:${mock.address().port}/token`,
+    '--var', `GOOGLE_API_URL:http://127.0.0.1:${mock.address().port}`, '--var', `ITUNES_URL:http://127.0.0.1:${mock.address().port}`, '--show-interactive-dev-session=false'],
   { cwd: DIR, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false', NO_PROXY: '127.0.0.1,localhost' } });
   let glog = ''; wg.stdout.on('data', d => (glog += d)); wg.stderr.on('data', d => (glog += d));
   try {
@@ -335,6 +351,46 @@ try {
       assert.ok(h.has('error') && !h.has('k'));
       const bo = await callback(await startFlow(null), { sub: 'g-3', email: 'b@example.com', name: 'Bo' });
       assert.match((await me(bo.get('k'))).user.handle, /^user\d{4}$/, 'names too short fall back to a valid handle');
+    });
+    await t('YouTube likes: read-only consent, list is parked once for the right user only', async () => {
+      const u1 = (await g('/api/auth/anon', { method: 'POST', headers: ip(60) })).body.key;
+      const u2 = (await g('/api/auth/anon', { method: 'POST', headers: ip(61) })).body.key;
+      assert.equal((await g('/api/import/youtube/start', { method: 'POST' })).status, 401, 'needs a shelf');
+      const r = await g('/api/import/youtube/start', { method: 'POST', headers: as(u1) });
+      const au = new URL(r.body.url);
+      assert.equal(au.searchParams.get('scope'), 'https://www.googleapis.com/auth/youtube.readonly');
+      assert.equal(au.searchParams.get('redirect_uri'), `${gbase}/auth/google/callback`);
+      const state = au.searchParams.get('state');
+      const cb = st => fetch(`${gbase}/auth/google/callback?state=${st}&code=${Buffer.from('{}').toString('base64url')}`, { redirect: 'manual' });
+      const res = await cb(state);
+      assert.equal(new URL(res.headers.get('location')).hash, '#import=likes');
+      assert.equal((await g('/api/import/youtube/likes', { headers: as(u2) })).body.items.length, 0, 'other users see nothing');
+      const likes = (await g('/api/import/youtube/likes', { headers: as(u1) })).body.items;
+      assert.deepEqual(likes.map(i => [i.key, i.title, i.creator, i.length, i.url]), [
+        ['yt_LIKEDAAAAA1', 'Liked one', 'Chan', '1:02:03', 'https://www.youtube.com/watch?v=LIKEDAAAAA1'],
+        ['yt_LIKEDAAAAA2', 'Liked two', 'Chan', '0:45', 'https://www.youtube.com/watch?v=LIKEDAAAAA2']]);
+      assert.equal((await g('/api/import/youtube/likes', { headers: as(u1) })).body.items.length, 0, 'handed over once');
+      assert.equal((await g('/api/entries', { headers: as(u1) })).body.length, 0, 'nothing saved until picked');
+      const again = new URLSearchParams(new URL((await cb(state)).headers.get('location')).hash.slice(1));
+      assert.ok(again.has('import') && again.get('error'), 'state is single use');
+      const m = await me(u1);
+      assert.equal(m.user.has_google, false, 'a likes import is not a sign-in');
+    });
+    await t('podcast search: shows, then episodes ready for the picker', async () => {
+      const u1 = (await g('/api/auth/anon', { method: 'POST', headers: ip(62) })).body.key;
+      assert.equal((await g('/api/podcasts/search?q=million')).status, 401);
+      assert.deepEqual((await g('/api/podcasts/search?q=m', { headers: as(u1) })).body, []);
+      const shows = (await g('/api/podcasts/search?q=first%20million', { headers: as(u1) })).body;
+      assert.deepEqual(shows, [{ id: '42', title: 'My First Million', creator: 'Hubspot', thumbnail: 'https://img.example/a.jpg' }]);
+      assert.ok(mockCalls.some(c => c.startsWith('/search') && c.includes('term=first+million') && c.includes('media=podcast')));
+      assert.equal((await g('/api/podcasts/episodes?id=42%20or', { headers: as(u1) })).status, 400);
+      const eps = (await g('/api/podcasts/episodes?id=42', { headers: as(u1) })).body;
+      assert.equal(eps.length, 1);
+      assert.equal(eps[0].id, 'pod_apple_9001'); assert.equal(eps[0].kind, 'podcast'); assert.equal(eps[0].duration_sec, 3600);
+      assert.equal(eps[0].thumbnail, null, 'http artwork dropped');
+      const saved = await g('/api/ingest', { method: 'POST', headers: as(u1), body: JSON.stringify({ id: eps[0].id, source: 'apple_podcasts', title: eps[0].title, creator: eps[0].creator, url: eps[0].url, transcript: eps[0].description, transcript_status: 'description' }) });
+      assert.equal(saved.status, 200);
+      assert.equal((await g('/api/entries', { headers: as(u1) })).body[0].id, 'pod_apple_9001');
     });
   } finally {
     wg.kill('SIGINT'); setTimeout(() => wg.kill('SIGKILL'), 2000);

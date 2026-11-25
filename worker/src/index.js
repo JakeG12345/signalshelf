@@ -10,10 +10,13 @@ import { handleMcp } from './mcp.js';
 import { renderLanding, renderNotFound } from './landing.js';
 import { renderProfileHtml, renderPeopleHtml, publicItem } from '../../shared/profile-render.js';
 import { createAnonymousUser, resolveUser, updateProfile, listPeople, topSignal, userByHandle, followCounts, setFollow, isFollowing, listFollowing, feed, rateLimit, looksLikeKey, createAccount, changePassword, login, logout, googleEnabled, googleStart, googleCallback } from './accounts.js';
+import { YT_STATE_PREFIX, youtubeLikesStart, youtubeLikesCallback, takeYoutubeLikes, searchPodcasts, podcastEpisodes } from './imports.js';
 import { captureLink } from '../../shared/capture.js';
 import { supadataProvider } from './transcripts.js';
 import { APP_VERSION, MONETIZATION_MODELS, SOURCES, STATUSES, HttpError } from '../../shared/core.js';
 import { DEFAULT_SHELF_SETTINGS, normalizeShelfSettings, shelfDataFromEntries, renderShelfHtml } from '../../shared/shelf-render.js';
+
+const params400 = (err, fallback) => (err.status && err.status < 500 ? err.message : fallback);
 
 const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers } });
@@ -234,6 +237,17 @@ async function privateApi(request, url, ctx) {
     });
   }
 
+  if (path === '/api/import/youtube/start' && method === 'POST') return json({ url: await youtubeLikesStart(db, env, url.origin, user) });
+  if (path === '/api/import/youtube/likes' && method === 'GET') return json(await takeYoutubeLikes(store));
+  if (path === '/api/podcasts/search' && method === 'GET') {
+    await rateLimit(db, `ps:${user.id}`, 200, 3600, 'Too many searches. Try again later.');
+    return json(await searchPodcasts(env, request, url.searchParams.get('q')));
+  }
+  if (path === '/api/podcasts/episodes' && method === 'GET') {
+    await rateLimit(db, `ps:${user.id}`, 200, 3600, 'Too many searches. Try again later.');
+    return json(await podcastEpisodes(env, request, url.searchParams.get('id')));
+  }
+
   if (path === '/api/import' && method === 'POST') {
     const body = await readJson(request);
     const entries = Array.isArray(body) ? body : body.entries;
@@ -314,6 +328,16 @@ export default {
         return json({ url: await googleStart(db, request, env, url.origin, user) });
       }
       if (path === '/auth/google/callback' && request.method === 'GET') {
+        if ((url.searchParams.get('state') || '').startsWith(YT_STATE_PREFIX)) {
+          try {
+            await youtubeLikesCallback(db, env, url.origin, url.searchParams);
+            return Response.redirect(`${url.origin}/app/#import=likes`, 302);
+          } catch (err) {
+            if (!err.status || err.status >= 500) console.error(err);
+            const msg = params400(err, 'YouTube import failed. Try again.').replace('sign-in', 'import');
+            return Response.redirect(`${url.origin}/app/#import&error=${encodeURIComponent(msg)}`, 302);
+          }
+        }
         try {
           const { key, kind } = await googleCallback(db, request, env, url.origin, url.searchParams);
           return Response.redirect(`${url.origin}/app/#k=${key}&google=${kind}`, 302);
