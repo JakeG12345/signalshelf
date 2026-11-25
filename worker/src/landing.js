@@ -142,7 +142,7 @@ ${FONT_LINKS}
 
   <footer>
     <span>Signal Shelf</span>
-    <span><a href="/privacy">Privacy</a> · <a href="https://github.com/JakeG12345/signalshelf">Source on GitHub</a></span>
+    <span><a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="https://github.com/JakeG12345/signalshelf">Source on GitHub</a></span>
   </footer>
 </div>
 <script>
@@ -209,5 +209,27 @@ export function renderPrivacy(origin) {
 <p>We do not sell data or show ads.</p>
 <h2>Your data</h2>
 <p>In Account you can download everything or delete your shelf. Deleting removes your account and all of its data.</p>
+</main></body></html>`;
+}
+
+export function renderTerms(origin) {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Terms · Signal Shelf</title>${FONT_LINKS}<style>${BASE_CSS}
+  body { padding:32px 24px 64px; }
+  main { max-width:680px; margin:0 auto; }
+  h1 { margin:36px 0 6px; } h2 { font-size:18px; margin:30px 0 6px; }
+  p, li { color:var(--mute); line-height:1.55; } ul { padding-left:20px; }</style></head>
+<body><main><a class="wordmark" href="${esc(origin)}/">${LOGO_SVG}Signal Shelf</a>
+<h1>Terms</h1><p>Last updated 25 November 2026.</p>
+<h2>Using Signal Shelf</h2>
+<p>Signal Shelf is free. You can use it to keep track of videos and podcasts, rate them and share your shelf. Don't use it to break the law, harass people, or overload the service.</p>
+<h2>Your content</h2>
+<p>What you save, rate and write stays yours. By making your profile public you let others see the parts listed in the <a href="/privacy">privacy page</a>. Transcripts and descriptions belong to their creators and are kept for your personal use.</p>
+<h2>YouTube</h2>
+<p>Importing from YouTube uses YouTube API Services. By using it you agree to the <a href="https://www.youtube.com/t/terms">YouTube Terms of Service</a>.</p>
+<h2>Limits</h2>
+<p>There are limits on saves and items to keep the service running. We may remove accounts that abuse it. The service is provided as is, without warranties, and we are not liable for lost data, so download a copy from Account if it matters to you.</p>
+<h2>Changes</h2>
+<p>We may update these terms. If you keep using Signal Shelf after a change, the new terms apply. You can delete your shelf any time in Account.</p>
 </main></body></html>`;
 }
