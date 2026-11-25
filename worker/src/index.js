@@ -372,7 +372,7 @@ export default {
     } catch (err) {
       const status = err.status || 500;
       if (status >= 500) console.error(err);
-      return json({ error: status >= 500 ? 'Something went wrong. Please try again.' : err.message }, status);
+      return json({ error: status >= 500 && !err.expose ? 'Something went wrong. Please try again.' : err.message }, status);
     }
   }
 };

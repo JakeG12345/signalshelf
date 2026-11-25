@@ -1,5 +1,8 @@
 // History imports that need a third party: YouTube liked videos (Google OAuth) and podcast search (Apple's public directory).
 import { HttpError } from '../../shared/core.js';
+
+/** A 5xx whose message is safe to show (an upstream service failed, not our code). */
+const upstream = msg => Object.assign(new HttpError(502, msg), { expose: true });
 import { googleEnabled, googleAuthUrl, googleExchange, rateLimit } from './accounts.js';
 import { createStore } from './store.js';
 
@@ -73,16 +76,16 @@ async function itunes(env, path, params) {
     text = await res.text();
   } catch (err) {
     console.error('iTunes fetch failed', path, err?.message);
-    throw new HttpError(502, 'Podcast search is not responding. Try again.');
+    throw upstream('Podcast search is not responding. Try again.');
   }
   if (!res.ok) {
     console.error('iTunes error', path, res.status, text.slice(0, 300));
-    throw new HttpError(502, `Podcast search failed (${res.status}). Try again.`);
+    throw upstream(`Podcast search failed (${res.status}). Try again.`);
   }
   try { return JSON.parse(text.trim()); }
   catch {
     console.error('iTunes non-JSON', path, res.status, text.slice(0, 300));
-    throw new HttpError(502, 'Podcast search sent back something odd. Try again.');
+    throw upstream('Podcast search sent back something odd. Try again.');
   }
 }
 const country = request => { const c = request.cf?.country; return typeof c === 'string' && /^[A-Z]{2}$/.test(c) ? c : 'US'; };
