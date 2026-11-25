@@ -26,7 +26,7 @@ Owner: Ryan (GitHub JakeG12345). Built as day 1 of a "launch a product every day
 
 ```bash
 npm ci && npm test                         # 33 checks: shared logic, importers, local server, stdio MCP
-cd worker && npm ci && npm test            # 32 checks: multi-user Worker under wrangler dev + remote MCP + Google sign-in, YouTube likes and podcast search (local mock)
+cd worker && npm ci && npm test            # 33 checks: multi-user Worker under wrangler dev + remote MCP + Google sign-in, YouTube likes and podcast search (local mock)
 cd worker && npm run dev                   # local cloud dev server
 ```
 
@@ -36,6 +36,7 @@ Check a deploy: `curl -s https://api.github.com/repos/JakeG12345/signalshelf/act
 
 ## Rules that matter
 
+- **Sharing is off** (`SOCIAL_ENABLED` empty in `wrangler.toml`): no public profiles, `/people`, `/u/*`, follows, Following feed or landing picks; all return 404 or are hidden, and `capabilities.social` is false so the app hides them. Ryan wants it back only if there's interest; flip `SOCIAL_ENABLED = "true"`. The main test instance runs with it on, the Google instance with it off.
 - **Privacy:** personal notes and transcripts never leave a user's own API responses. Profiles, feed, `/people`, landing "top rated" and "most must watch" (`featured`) and `shelf.json` use `publicItem` / explicit public columns only. Add a test whenever you touch these.
 - **Every query is user-scoped** in the Worker (`createStore(db, userId)`, `buildEntriesQuery({ userId })`). Entry ids (`yt_<id>`, `pod_<uuid>`, `web_<hash>`) are only unique per user.
 - **Re-captures never overwrite** a user's rating, tags, takeaways or notes, or a transcript with an empty one (`buildUpsert`).

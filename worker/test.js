@@ -15,7 +15,7 @@ const persist = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-d1-'));
 const base = `http://127.0.0.1:${PORT}`;
 
 const wr = spawn('npx', ['wrangler', 'dev', '--local', '--port', String(PORT), '--ip', '127.0.0.1', '--persist-to', persist,
-  '--var', 'LIMIT_ANON_PER_IP_DAY:5', '--var', 'LIMIT_ITEMS_PER_USER:4', '--show-interactive-dev-session=false'],
+  '--var', 'LIMIT_ANON_PER_IP_DAY:5', '--var', 'SOCIAL_ENABLED:true', '--var', 'LIMIT_ITEMS_PER_USER:4', '--show-interactive-dev-session=false'],
 { cwd: DIR, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false', NO_PROXY: '127.0.0.1,localhost' } });
 let log = '';
 wr.stdout.on('data', d => (log += d));
@@ -246,6 +246,36 @@ try {
     assert.equal((await j('/api/entries', { headers: as(A) })).status, 200, 'A unaffected');
   });
 
+    await t('landing features the most must-watch video and podcast, public shelves only', async () => {
+      const mk = async (n, handle) => {
+        const k = (await j('/api/auth/anon', { method: 'POST', headers: ip(70 + n) })).body.key;
+        await j('/api/me', { method: 'PUT', headers: as(k), body: JSON.stringify({ handle }) });
+        return k;
+      };
+      const save = async (k, id, title, rating, notes = '') => {
+        const src = id.startsWith('yt_') ? 'youtube' : 'apple_podcasts';
+        const url = src === 'youtube' ? `https://www.youtube.com/watch?v=${id.slice(3)}` : `https://podcasts.apple.com/us/podcast/x/id1?i=${id.slice(10)}`;
+        await j('/api/ingest', { method: 'POST', headers: as(k), body: JSON.stringify({ id, source: src, title, creator: 'C', url, transcript: 'FEAT-TRANSCRIPT' }) });
+        await j(`/api/entries/${id}`, { method: 'PATCH', headers: as(k), body: JSON.stringify({ signal_rating: rating, personal_notes: notes }) });
+      };
+      const [a, b, c, p] = [await mk(1, 'feat_a'), await mk(2, 'feat_b'), await mk(3, 'feat_c'), await mk(4, 'feat_private')];
+      // Two must-watch votes beat three high-signal (4 bar) votes
+      await save(a, 'yt_MUSTWATCH01', 'Two must watch', 5, 'FEAT-NOTE');
+      await save(b, 'yt_MUSTWATCH01', 'Two must watch', 5);
+      for (const k of [a, b, c]) await save(k, 'yt_FOURBARS01', 'Three high signal', 4);
+      await save(a, 'pod_apple_777', 'Best episode', 5);
+      // A private shelf's votes don't count
+      await j('/api/me', { method: 'PUT', headers: as(p), body: JSON.stringify({ is_private: true }) });
+      for (let i = 0; i < 3; i++) await save(p, 'yt_PRIVATEVID1', 'Private pick', 5);
+      const landing = await (await fetch(base + '/')).text();
+      const picks = landing.slice(landing.indexOf('Most must watch'), landing.indexOf('</section>', landing.indexOf('Most must watch')));
+      assert.ok(picks.includes('Two must watch') && picks.includes('2 must watch'), 'video by must-watch count');
+      assert.ok(picks.includes('Best episode'), 'podcast featured');
+      assert.ok(picks.includes('i.ytimg.com/vi/MUSTWATCH01/'), 'video thumbnail');
+      assert.ok(!picks.includes('Three high signal') && !landing.includes('Private pick'));
+      assert.ok(landing.includes('Three high signal'), 'runner-up stays in top rated');
+      assert.ok(!landing.includes('FEAT-NOTE') && !landing.includes('FEAT-TRANSCRIPT'), 'no notes or transcripts');
+    });
   await t('Google sign-in is hidden when not configured', async () => {
     assert.equal((await j('/api/meta', { headers: as(A) })).body.googleSignIn, false);
     assert.equal((await j('/api/auth/google/start', { method: 'POST' })).status, 404);
@@ -436,35 +466,19 @@ try {
       const later = await g('/api/ingest', { method: 'POST', headers: as(u1), body: JSON.stringify({ id: 'pod_apple_9002', source: 'apple_podcasts', title: 'Later', status: 'to_watch' }) });
       assert.equal(later.body.entry.status, 'to_watch', 'status from the add box is kept');
     });
-    await t('landing features the most must-watch video and podcast, public shelves only', async () => {
-      const mk = async (n, handle) => {
-        const k = (await g('/api/auth/anon', { method: 'POST', headers: ip(70 + n) })).body.key;
-        await g('/api/me', { method: 'PUT', headers: as(k), body: JSON.stringify({ handle }) });
-        return k;
-      };
-      const save = async (k, id, title, rating, notes = '') => {
-        const src = id.startsWith('yt_') ? 'youtube' : 'apple_podcasts';
-        const url = src === 'youtube' ? `https://www.youtube.com/watch?v=${id.slice(3)}` : `https://podcasts.apple.com/us/podcast/x/id1?i=${id.slice(10)}`;
-        await g('/api/ingest', { method: 'POST', headers: as(k), body: JSON.stringify({ id, source: src, title, creator: 'C', url, transcript: 'FEAT-TRANSCRIPT' }) });
-        await g(`/api/entries/${id}`, { method: 'PATCH', headers: as(k), body: JSON.stringify({ signal_rating: rating, personal_notes: notes }) });
-      };
-      const [a, b, c, p] = [await mk(1, 'feat_a'), await mk(2, 'feat_b'), await mk(3, 'feat_c'), await mk(4, 'feat_private')];
-      // Two must-watch votes beat three high-signal (4 bar) votes
-      await save(a, 'yt_MUSTWATCH01', 'Two must watch', 5, 'FEAT-NOTE');
-      await save(b, 'yt_MUSTWATCH01', 'Two must watch', 5);
-      for (const k of [a, b, c]) await save(k, 'yt_FOURBARS01', 'Three high signal', 4);
-      await save(a, 'pod_apple_777', 'Best episode', 5);
-      // A private shelf's votes don't count
-      await g('/api/me', { method: 'PUT', headers: as(p), body: JSON.stringify({ is_private: true }) });
-      for (let i = 0; i < 3; i++) await save(p, 'yt_PRIVATEVID1', 'Private pick', 5);
+    await t('sharing off (default): profiles, People, follows and landing picks are all private', async () => {
+      const k = (await g('/api/auth/anon', { method: 'POST', headers: ip(90) })).body.key;
+      await g('/api/me', { method: 'PUT', headers: as(k), body: JSON.stringify({ handle: 'private_pat' }) });
+      await g('/api/ingest', { method: 'POST', headers: as(k), body: JSON.stringify({ id: 'yt_PRIVATEONLY', source: 'youtube', title: 'PRIVATE-TITLE', url: 'https://www.youtube.com/watch?v=PRIVATEONLY' }) });
+      await g('/api/entries/yt_PRIVATEONLY', { method: 'PATCH', headers: as(k), body: JSON.stringify({ signal_rating: 5 }) });
       const landing = await (await fetch(gbase + '/')).text();
-      const picks = landing.slice(landing.indexOf('Most must watch'), landing.indexOf('</section>', landing.indexOf('Most must watch')));
-      assert.ok(picks.includes('Two must watch') && picks.includes('2 must watch'), 'video by must-watch count');
-      assert.ok(picks.includes('Best episode'), 'podcast featured');
-      assert.ok(picks.includes('i.ytimg.com/vi/MUSTWATCH01/'), 'video thumbnail');
-      assert.ok(!picks.includes('Three high signal') && !landing.includes('Private pick'));
-      assert.ok(landing.includes('Three high signal'), 'runner-up stays in top rated');
-      assert.ok(!landing.includes('FEAT-NOTE') && !landing.includes('FEAT-TRANSCRIPT'), 'no notes or transcripts');
+      assert.ok(!landing.includes('PRIVATE-TITLE') && !landing.includes('private_pat') && !landing.includes('href="/people"'));
+      assert.ok(!landing.includes('share your shelf') && !landing.includes('Most must watch'));
+      for (const p of ['/u/private_pat', '/@private_pat', '/u/private_pat/shelf.json', '/people']) assert.equal((await fetch(gbase + p, { redirect: 'manual' })).status, 404, p);
+      assert.equal((await g('/api/feed', { headers: as(k) })).status, 404);
+      assert.equal((await g('/api/follow/private_pat', { method: 'POST', headers: as(k) })).status, 404);
+      const m = await me(k);
+      assert.equal(m.capabilities.social, false); assert.equal(m.profileUrl, null); assert.equal(m.shelfUrl, null);
     });
     await t('podcast transcripts: real transcript from the show feed, description when there is none', async () => {
       const k = (await g('/api/auth/anon', { method: 'POST', headers: ip(80) })).body.key;

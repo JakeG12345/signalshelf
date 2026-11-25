@@ -1,9 +1,10 @@
 // Public landing page at "/".
 import { esc, FONT_LINKS, BASE_CSS, RATING_LABELS, barsHtml, LOGO_SVG } from '../../shared/theme.js';
 
-export function renderLanding({ origin, shelves = [], top = [], featured = {} }) {
+export function renderLanding({ origin, social = true, shelves = [], top = [], featured = {} }) {
   const title = 'Signal Shelf: track what you watch';
-  const desc = 'Track the YouTube videos and podcasts you watch, with transcripts. Connect Claude or export them, and share your shelf.';
+  const desc = social ? 'Track the YouTube videos and podcasts you watch, with transcripts. Connect Claude or export them, and share your shelf.'
+    : 'Track the YouTube videos and podcasts you watch, with transcripts. Connect Claude or export them.';
 
   const picks = [['Video', featured.video], ['Podcast', featured.podcast]].filter(([, f]) => f);
   const pickIds = new Set(picks.map(([, f]) => f.id));
@@ -128,16 +129,16 @@ ${FONT_LINKS}
 <div class="wrap">
   <nav class="top">
     <a class="wordmark" href="/">${LOGO_SVG}Signal Shelf</a>
-    <div><a class="plain" href="/people">People</a><a class="plain" href="/app/#login">Log in</a><a class="btn small solid" href="/app/">Start a shelf</a></div>
+    <div>${social ? '<a class="plain" href="/people">People</a>' : ''}<a class="plain" href="/app/#login">Log in</a><a class="btn small solid" href="/app/">Start a shelf</a></div>
   </nav>
 
   <section class="hero">
     <div>
       <h1 class="wide">Track what you watch. Let Claude read it.</h1>
-      <p class="lede">Save YouTube videos and podcasts with their transcripts. Rate them, share your shelf.</p>
+      <p class="lede">Save YouTube videos and podcasts with their transcripts. Rate them${social ? ', share your shelf' : ''}.</p>
       <div class="ctas">
         <a class="btn solid" href="/app/">Start a shelf</a>
-        ${shelves[0] ? `<a class="btn" href="/people">Browse people</a>` : ''}
+        ${social && shelves[0] ? `<a class="btn" href="/people">Browse people</a>` : ''}
       </div>
       <p class="note">Free. No account needed.</p>
     </div>
@@ -155,7 +156,7 @@ ${FONT_LINKS}
   <section class="steps">
     <div><span class="n wide">1</span><h2>Save</h2><p>Videos and podcasts, transcripts included.</p></div>
     <div><span class="n wide">2</span><h2>Rate</h2><p>One to five bars. Add notes.</p></div>
-    <div><span class="n wide">3</span><h2>Use</h2><p>Connect Claude or export. Share your shelf.</p></div>
+    <div><span class="n wide">3</span><h2>Use</h2><p>Connect Claude or export.${social ? ' Share your shelf.' : ''}</p></div>
   </section>
 
   ${picks.length ? `<section class="block">
@@ -229,7 +230,7 @@ export function renderPrivacy(origin) {
 <li>A scrambled form of your network address, used only to limit abuse.</li>
 </ul>
 <h2>What others can see</h2>
-<p>If you have a username, your profile shows what you saved, your ratings, tags and takeaways. Notes and transcripts are never shown to anyone else. You can make your profile private in Account.</p>
+<p>Your shelf is private. Nothing you save, rate or write is shown to anyone else. If we add sharing later, it will be something you turn on, and notes and transcripts will stay private.</p>
 <h2>Google sign-in</h2>
 <p>If you continue with Google we receive your name, email address and Google account ID. We store the account ID and your name. We do not store your email address.</p>
 <h2>YouTube</h2>

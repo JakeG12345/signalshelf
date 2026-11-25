@@ -101,7 +101,7 @@ const int = (v, d, min, max) => {
 const text = data => ({ content: [{ type: 'text', text: typeof data === 'string' ? data : JSON.stringify(data, null, 2) }] });
 const toolError = msg => ({ content: [{ type: 'text', text: msg }], isError: true });
 
-async function callTool(name, a = {}, { store, origin, user, guardCapture, capture = captureLink }) {
+async function callTool(name, a = {}, { store, origin, user, social = true, guardCapture, capture = captureLink }) {
   switch (name) {
     case 'list_watched_media':
       return text((await store.query({
@@ -147,6 +147,7 @@ async function callTool(name, a = {}, { store, origin, user, guardCapture, captu
     }
     case 'get_public_shelf': {
       const s = normalizeShelfSettings(await store.getSetting('shelf', {}) || {});
+      if (!social) return text({ public: false, note: 'Profiles are private for now. Nothing on this shelf is public.' });
       if (!user?.handle) return text({ public: false, note: 'No profile yet. Sign up in the Signal Shelf app to get a public profile.' });
       return text({ url: `${origin}/u/${user.handle}`, public: !user.is_private });
     }

@@ -359,15 +359,15 @@
     <div id="a-signedin" hidden>
       <form id="profileform" style="margin-top:12px">
         <input id="p-handle" placeholder="Username" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="username" maxlength="21" style="width:100%;margin-bottom:8px">
-        <div class="grid2">
+        <div class="grid2" id="p-social">
           <input id="p-name" placeholder="Name" maxlength="60" autocomplete="name">
           <input id="p-bio" placeholder="One line about you" maxlength="160">
         </div>
-        <label class="switchrow"><input type="checkbox" id="p-private"> Private profile</label>
-        <p class="meta" style="margin:8px 0 10px">Notes and transcripts are always private.</p>
+        <label class="switchrow" id="p-privrow"><input type="checkbox" id="p-private"> Private profile</label>
+        <p class="meta" style="margin:8px 0 10px" id="p-note">Notes and transcripts are always private.</p>
         <div class="row" style="justify-content:space-between">
           <button class="primary" type="submit">Save</button>
-          <span><a href="#" id="a-viewprofile">View profile</a> · <a href="#" id="a-logout">Log out</a></span>
+          <span><span id="a-viewwrap"><a href="#" id="a-viewprofile">View profile</a> · </span><a href="#" id="a-logout">Log out</a></span>
         </div>
       </form>
     </div>
@@ -579,7 +579,7 @@ function applyMeta(meta) {
   }
   if (META.mode === 'cloud') $('#btn-connect').textContent = META.user?.has_password ? 'Account' : 'Sign up';
   const social = !!META.capabilities?.social;
-  $('#btn-shelf').hidden = social;          // the old "publish a shelf" flow is only for the Mac version
+  $('#btn-shelf').hidden = social || META.mode === 'cloud'; // the old "publish a shelf" flow is only for the Mac version
   $('#btn-people').hidden = !social;
   $('#viewtabs').hidden = !social;
   const s = META.stats;
@@ -980,6 +980,9 @@ function openAccount(focusLogin = false) {
   $('#p-name').value = u.display_name || '';
   $('#p-bio').value = u.bio || '';
   $('#p-private').checked = !!u.is_private;
+  const social = !!META.capabilities?.social;
+  $('#p-social').hidden = $('#p-privrow').hidden = $('#a-viewwrap').hidden = !social;
+  $('#p-note').textContent = social ? 'Notes and transcripts are always private.' : 'Your shelf is private. Only you can see it.';
   $('#a-who').textContent = hasAccount ? '' : 'Keep your shelf and use it anywhere.';
   $('#a-who').hidden = hasAccount;
   $('#a-synctext').textContent = hasAccount ? 'Opens your shelf without a password. Keep it private.' : 'The only way back to this shelf until you sign up. Keep it private.';
@@ -1310,7 +1313,7 @@ $('#i-save').addEventListener('click', async () => {
 $('#a-viewprofile').addEventListener('click', e => { e.preventDefault(); if (META.user?.handle) location.href = `/u/${META.user.handle}`; });
 $('#profileform').addEventListener('submit', async e => {
   e.preventDefault();
-  const patch = { display_name: $('#p-name').value, bio: $('#p-bio').value, is_private: $('#p-private').checked };
+  const patch = META.capabilities?.social ? { display_name: $('#p-name').value, bio: $('#p-bio').value, is_private: $('#p-private').checked } : {};
   const handle = $('#p-handle').value.trim().replace(/^@/, '').toLowerCase();
   if (handle && handle !== META.user.handle) patch.handle = handle;
   const before = { ...META.user };
@@ -1394,7 +1397,7 @@ async function handleHash() {
     openImport(); importSource('yt'); if (error) toast(error, true); return;
   }
   if ((login || account) && META.mode === 'cloud') { history.replaceState(null, '', location.pathname); openAccount(!!login); if (error) toast(error, true); return; }
-  if (follow && META.mode === 'cloud') { history.replaceState(null, '', location.pathname); return followFromLink(follow); }
+  if (follow && META.capabilities?.social) { history.replaceState(null, '', location.pathname); return followFromLink(follow); }
   if (!k && !add && !open && !google) return;
   history.replaceState(null, '', location.pathname);
   if (k && keyFromInput(k) && k !== getToken()) {

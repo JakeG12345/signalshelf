@@ -24,6 +24,9 @@ const json = (data, status = 200, headers = {}) =>
 const html = (body, status = 200, headers = {}) =>
   new Response(body, { status, headers: { 'Content-Type': 'text/html; charset=utf-8', ...headers } });
 
+// Sharing (public profiles, People, follows, Following feed, landing picks). Off until there's interest.
+const socialOn = env => String(env.SOCIAL_ENABLED || '').toLowerCase() === 'true';
+
 function limitsFrom(env) {
   const n = (v, d) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : d);
   return {
@@ -113,6 +116,7 @@ async function privateApi(request, url, ctx) {
     }
   }
 
+  if (!socialOn(env) && (/^\/api\/(follow\/|following$|feed$|shelf\/)/.test(path))) throw new HttpError(404, 'Sharing is off for now.');
   if ((m = path.match(/^\/api\/follow\/([A-Za-z0-9_]{3,20})$/))) {
     const target = await userByHandle(db, m[1]);
     if (!target) throw new HttpError(404, 'No one with that username.');
@@ -125,11 +129,11 @@ async function privateApi(request, url, ctx) {
   if (path === '/api/meta' && method === 'GET') {
     return json({
       mode: 'cloud', version: APP_VERSION, user,
-      capabilities: { podcastsSync: false, shelfLive: true, accounts: true, social: true },
+      capabilities: { podcastsSync: false, shelfLive: socialOn(env), accounts: true, social: socialOn(env) },
       googleSignIn: googleEnabled(env),
-      shelfUrl: user.handle ? `${url.origin}/u/${user.handle}` : null,
-      profileUrl: user.handle ? `${url.origin}/u/${user.handle}` : null,
-      follow: await followCounts(db, user.id),
+      shelfUrl: socialOn(env) && user.handle ? `${url.origin}/u/${user.handle}` : null,
+      profileUrl: socialOn(env) && user.handle ? `${url.origin}/u/${user.handle}` : null,
+      follow: socialOn(env) ? await followCounts(db, user.id) : { followers: 0, following: 0 },
       mcpUrl: `${url.origin}/mcp/${key}`,
       syncUrl: `${url.origin}/app/#k=${key}`,
       shortcutUrl: `${url.origin}/app/#k=${key}&add=`,
@@ -319,10 +323,14 @@ export default {
           ...(user ? { entries: (await createStore(db, user.id).stats()).total, handle: user.handle } : {}) });
       }
       if (path === '/' || path === '') {
-        return html(renderLanding({ origin: url.origin, shelves: (await listPeople(db, { limit: 8 })).filter(p => p.items > 0), top: await topSignal(db), featured: await featured(db) }), 200, { 'Cache-Control': 'public, max-age=60' });
+        if (!socialOn(env)) return html(renderLanding({ origin: url.origin, social: false }), 200, { 'Cache-Control': 'public, max-age=60' });
+        return html(renderLanding({ origin: url.origin, social: true, shelves: (await listPeople(db, { limit: 8 })).filter(p => p.items > 0), top: await topSignal(db), featured: await featured(db) }), 200, { 'Cache-Control': 'public, max-age=60' });
       }
       if (path === '/terms' || path === '/terms/') return html(renderTerms(url.origin), 200, { 'Cache-Control': 'public, max-age=3600' });
       if (path === '/privacy' || path === '/privacy/') return html(renderPrivacy(url.origin), 200, { 'Cache-Control': 'public, max-age=3600' });
+      if (!socialOn(env) && (path === '/people' || path === '/people/' || /^\/(u\/|@)/.test(path))) {
+        return path.endsWith('.json') ? json({ error: 'Profiles are private.' }, 404) : html(renderNotFound(url.origin, 'Profiles are private.'), 404);
+      }
       if (path === '/people' || path === '/people/') {
         const q = (url.searchParams.get('q') || '').slice(0, 40);
         return html(renderPeopleHtml({ people: await listPeople(db, { q, limit: 60 }), q, origin: url.origin }), 200, { 'Cache-Control': q ? 'no-store' : 'public, max-age=60' });
@@ -402,7 +410,7 @@ export default {
       const store = createStore(db, user.id);
       if (isMcp) {
         await rateLimit(db, `w:${user.id}`, limits.writesPerUserPerHour, 3600, 'Too many requests this hour.');
-        return handleMcp(request, { store, origin: url.origin, user, guardCapture: captureGuard(db, user, store, limits), capture: captureFor(env, store) });
+        return handleMcp(request, { store, origin: url.origin, user, social: socialOn(env), guardCapture: captureGuard(db, user, store, limits), capture: captureFor(env, store) });
       }
       return await privateApi(request, url, { db, user, key, limits, store, env, capture: captureFor(env, store) });
     } catch (err) {
