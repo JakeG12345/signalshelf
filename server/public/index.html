@@ -1201,9 +1201,10 @@ $('#i-save').addEventListener('click', async () => {
   const queue = [...picks];
   await Promise.all(Array.from({ length: 3 }, async () => { while (queue.length) await saveOne(queue.shift()); }));
   toast(failed ? `Saved ${picks.length - failed}. ${failed} couldn't be saved; try them again.` : `Saved ${picks.length} to your shelf`, !!failed);
-  renderCandidates();
-  btn.disabled = false; updateImportCount();
+  btn.disabled = false;
   loadMeta(); loadEntries();
+  if (!failed) { closeModal($('#import'), true); return; }
+  renderCandidates(); updateImportCount();
 });
 
 // ---------- Profiles, People, Following ----------
