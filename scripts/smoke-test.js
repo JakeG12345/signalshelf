@@ -121,6 +121,38 @@ await t('capture: generic page (Spotify/article) via Open Graph', async () => {
   assert.equal(r.source, 'web'); assert.equal(r.title, 'Episode 12 & pricing'); assert.equal(r.creator, 'Spotify');
   assert.match(r.id, /^web_[0-9a-f]{20}$/); assert.equal(r.thumbnail, 'https://i.scdn.co/x.jpg');
 });
+await t('extension: Apple and Spotify episode links resolve to the same podcast episode', async () => {
+  const ext = await import('../extension/podcast.js');
+  assert.deepEqual(ext.podcastLink('https://podcasts.apple.com/us/podcast/x/id1291423644?i=1000803534789'), { kind: 'apple', show: '1291423644', episode: '1000803534789' });
+  assert.deepEqual(ext.podcastLink('https://open.spotify.com/episode/4rOoJ6Egrf8K2IrywzwOMk?si=1'), { kind: 'spotify', id: '4rOoJ6Egrf8K2IrywzwOMk' });
+  assert.equal(ext.podcastLink('https://podcasts.apple.com/us/podcast/x/id1'), null, 'show page, no episode');
+  assert.equal(ext.podcastLink('https://example.com/a'), null);
+  const ep = { kind: 'podcast-episode', trackId: 1000803534789, trackName: 'Financial Crash Expert: Biggest Money Mistake!', collectionName: 'The Diary Of A CEO with Steven Bartlett',
+    collectionId: 1291423644, episodeUrl: 'https://cdn.example/doac.mp3', episodeGuid: 'g1', trackTimeMillis: 7200000, artworkUrl600: 'https://img.example/a.jpg', description: 'Show notes' };
+  const calls = [];
+  const fetchImpl = async url => {
+    const u = new URL(url); calls.push(u.pathname + '?' + u.searchParams.toString());
+    const id = u.searchParams.get('id');
+    const results = u.pathname === '/search' ? [{ ...ep, trackId: 1, trackName: 'Other episode' }, ep]
+      : id === '1291423644' && u.searchParams.get('entity') ? [{ wrapperType: 'track', kind: 'podcast', feedUrl: 'https://feeds.example/doac.xml' }]
+      : id === '1000803534789' ? [ep]
+      : [{ wrapperType: 'track', kind: 'podcast', feedUrl: 'https://feeds.example/doac.xml' }];
+    return { ok: true, json: async () => ({ results }) };
+  };
+  // Apple: not in the latest 200, found by its own id
+  const a = await ext.resolveEpisode('https://podcasts.apple.com/us/podcast/x/id1291423644?i=1000803534789', { fetchImpl });
+  assert.equal(a.id, 'pod_apple_1000803534789'); assert.equal(a.enclosure_url, 'https://cdn.example/doac.mp3');
+  assert.equal(a.feed_url, 'https://feeds.example/doac.xml'); assert.equal(a.description, 'Show notes'); assert.equal(a.duration_sec, 7200);
+  assert.ok(calls[0].includes('limit=200'), 'never asks Apple for more than 200');
+  // Spotify: same episode, Spotify link kept
+  const api = async path => { assert.ok(path.startsWith('/api/spotify-episode?url=')); return { title: 'Financial Crash Expert: Biggest Money Mistake', show: 'The Diary Of A CEO with Steven Bartlett', image: null }; };
+  const sp = await ext.resolveEpisode('https://open.spotify.com/episode/4rOoJ6Egrf8K2IrywzwOMk', { fetchImpl, api });
+  assert.equal(sp.id, a.id, 'same episode as the Apple link'); assert.equal(sp.url, 'https://open.spotify.com/episode/4rOoJ6Egrf8K2IrywzwOMk');
+  // Spotify exclusive: no match
+  const none = await ext.resolveEpisode('https://open.spotify.com/episode/4rOoJ6Egrf8K2IrywzwOMk', { fetchImpl: async () => ({ ok: true, json: async () => ({ results: [] }) }), api });
+  assert.equal(none, null);
+});
+
 await t('YouTube: innertube transcript fallback when caption files are empty', async () => {
   const player = { playabilityStatus: { status: 'OK' }, videoDetails: { videoId: 'EEEEEEEEEEE', title: 'Agency pricing', author: 'X', lengthSeconds: '60' },
     captions: { playerCaptionsTracklistRenderer: { captionTracks: [{ baseUrl: 'https://www.youtube.com/api/timedtext?v=E', languageCode: 'en' }] } } };

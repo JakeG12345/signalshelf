@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Signal Shelf",
-  "version": "2.3.0",
-  "description": "Save YouTube videos + transcripts to Signal Shelf (cloud or local). Auto-capture after 2 minutes of playback.",
+  "version": "2.4.0",
+  "description": "Save YouTube videos, Apple Podcasts and Spotify episodes, with transcripts, to Signal Shelf. Auto-capture for YouTube after 2 minutes of playback.",
   "permissions": [
     "activeTab",
     "scripting",
@@ -11,12 +11,14 @@
   ],
   "host_permissions": [
     "https://www.youtube.com/*",
+    "https://itunes.apple.com/*",
     "http://localhost:3456/*",
     "http://127.0.0.1:3456/*",
     "https://*.workers.dev/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "action": {
     "default_popup": "popup.html",

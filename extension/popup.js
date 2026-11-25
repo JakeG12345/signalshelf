@@ -1,3 +1,5 @@
+import { podcastLink } from './podcast.js';
+
 const $ = s => document.querySelector(s);
 const send = msg => chrome.runtime.sendMessage(msg).catch(e => ({ ok: false, error: e.message }));
 const LABELS = ['', 'Noise', 'Thin', 'Useful', 'High signal', 'Must watch'];
@@ -52,10 +54,17 @@ async function init() {
   [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const m = (tab?.url || '').match(/^https:\/\/www\.youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/)([\w-]{11})/);
   const videoId = m?.[1] || null;
+  const pod = !videoId && podcastLink(tab?.url || '');
   if (videoId) {
     $('#video-card').hidden = false;
     $('#v-title').textContent = (tab.title || '').replace(/^\(\d+\)\s*/, '').replace(/ - YouTube$/, '');
     $('#v-meta').textContent = 'Not saved yet';
+  } else if (pod) {
+    $('#video-card').hidden = false;
+    $('#v-title').textContent = (tab.title || 'Podcast episode').replace(/\s*[|\u2013-]\s*(Podcast on Spotify|Apple Podcasts)\s*$/i, '').replace(/^Listen to /, '');
+    $('#v-meta').textContent = pod.kind === 'spotify' ? 'Spotify episode · not saved yet' : 'Podcast episode · not saved yet';
+    $('#save').textContent = 'Save episode + transcript';
+    $('#save').dataset.podcast = '1';
   } else {
     $('#no-video').hidden = false;
   }
@@ -75,6 +84,10 @@ async function init() {
     return;
   }
 
+  if (pod?.kind === 'apple') {
+    const r = await send({ type: 'KT_GET', id: `pod_apple_${pod.episode}` });
+    if (r.ok && r.data) { $('#v-meta').textContent = `Saved · ${podStatus(r.data)}`; showEntry(r.data); $('#save').textContent = 'Save again'; }
+  }
   if (videoId) {
     const r = await send({ type: 'KT_GET', id: `yt_${videoId}` });
     if (r.ok && r.data) {
@@ -89,9 +102,23 @@ async function init() {
   }
 }
 
+const podStatus = e => e.transcript_status === 'ok' ? 'transcript ready' : e.transcript_status === 'pending' ? 'transcribing, ready in a minute or two' : 'no transcript';
+
 $('#save').addEventListener('click', async () => {
   const btn = $('#save');
   btn.disabled = true;
+  if (btn.dataset.podcast) {
+    setMsg('Finding the episode…');
+    const r = await send({ type: 'KT_SAVE_PODCAST', url: tab.url, tabId: tab.id });
+    btn.disabled = false;
+    if (!r.ok) return setMsg(r.error, 'err');
+    const e = r.data.entry;
+    $('#v-title').textContent = e.title;
+    $('#v-meta').textContent = r.data.matched ? `Saved · ${podStatus(e)}` : 'Saved as a link · not found in the podcast directory, so no transcript';
+    setMsg(r.data.matched ? 'Saved. Rate it below.' : 'Saved as a link.', r.data.matched ? 'ok' : '');
+    showEntry(e); btn.textContent = 'Save again';
+    return;
+  }
   setMsg('Reading video + transcript…');
   const r = await send({ type: 'KT_CAPTURE', tabId: tab.id });
   btn.disabled = false;
@@ -108,12 +135,13 @@ $('#linkform').addEventListener('submit', async ev => {
   const url = $('#link').value.trim();
   if (!url) return;
   $('#linkbtn').disabled = true;
-  setMsg('Fetching video…');
+  setMsg('Saving…');
   const r = await send({ type: 'KT_INGEST_URL', url, status: 'watched' });
   $('#linkbtn').disabled = false;
   if (!r.ok) return setMsg(r.error, 'err');
   $('#link').value = '';
   const e = r.data.entry;
+  if (r.data.matched !== undefined) return setMsg(`Added "${e.title}" · ${r.data.matched ? podStatus(e) : 'saved as a link'}`, 'ok');
   setMsg(`Added "${e.title}"${e.transcript_chars ? '' : ' (no transcript: open the video and press Save to grab it)'}`, e.transcript_chars ? 'ok' : '');
 });
 

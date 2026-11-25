@@ -695,7 +695,7 @@ function card(it) {
       ${flag ? `<span class="flag">${flag}</span>` : ''}</div>
     <div class="cbody">
       <div class="ctitle">${esc(it.title)}</div>
-      <div class="meta">${[esc(it.creator), fmtDate(it.watched_at), fmtDur(it.duration_sec)].filter(Boolean).join(', ')}</div>
+      <div class="meta">${[esc(it.creator), fmtDur(it.duration_sec)].filter(Boolean).join(', ')}</div>
       <div class="meter ${it.signal_rating ? 'rated' : ''}">${barsButtons(it.signal_rating || 0, 'tap')}<span>${it.signal_rating ? LABELS[it.signal_rating] : 'Tap to rate'}</span></div>
       ${it.monetization_models.length ? `<div class="chips">${it.monetization_models.map(m => `<span class="chip">${esc(m)}</span>`).join('')}</div>` : ''}
       ${it.key_takeaways.length ? `<div class="tk">${esc(it.key_takeaways[0])}${it.key_takeaways.length > 1 ? ` <span class="meta">+${it.key_takeaways.length - 1}</span>` : ''}</div>` : ''}
@@ -748,7 +748,7 @@ function fillModal(e) {
   $('#m-title').value = e.title;
   const url = safeUrl(e.url);
   $('#m-meta').innerHTML = [esc(e.creator), SOURCE_LABEL[e.source] || 'Link', fmtDur(e.duration_sec),
-    `saved ${fmtDate(e.watched_at)}`, url ? `<a href="${esc(url)}" target="_blank" rel="noopener">Open ↗</a>` : ''].filter(Boolean).join(', ');
+    e.published_at ? `published ${fmtDate(e.published_at)}` : '', `saved ${fmtDate(e.watched_at)}`, url ? `<a href="${esc(url)}" target="_blank" rel="noopener">Open ↗</a>` : ''].filter(Boolean).join(', ');
   $('#m-warn').innerHTML = loading ? '' : e.transcript_status === 'missing'
     ? `<div class="warnbox">No transcript yet. ${e.source === 'youtube' ? 'YouTube didn\'t hand one over. Paste one below, or save the video from desktop Chrome with the extension.' : 'Paste one below if you have it.'}</div>`
     : e.transcript_status === 'pending' ? '<div class="meta" style="margin-top:6px">Transcribing. Ready in a minute or two.</div>'

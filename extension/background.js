@@ -1,3 +1,5 @@
+import { resolveEpisode, podcastLink } from './podcast.js';
+
 // Service worker: talks to the local server (avoids page CORS / Private Network Access issues)
 // and orchestrates capture for both the popup and auto-capture.
 const DEFAULT_API = 'http://127.0.0.1:3456';
@@ -72,6 +74,21 @@ async function captureTab(tabId, { auto = false } = {}) {
   return { ok: true, entry, method: extracted.method, auto };
 }
 
+// Apple Podcasts or Spotify episode: find it in the directory, save it, then start the transcript.
+// The transcript runs on after the popup closes; if Chrome stops the worker first, the app picks it up on next open.
+async function savePodcast(url, status) {
+  const item = await resolveEpisode(url, { api: path => api(path) });
+  if (!item) { // not in the directory (Spotify exclusives): save as a plain link
+    const r = await api('/api/ingest-url', { method: 'POST', body: JSON.stringify({ url, status }), timeout: 45000 });
+    return { entry: r.entry, matched: false };
+  }
+  const { entry } = await api('/api/ingest', { method: 'POST', body: JSON.stringify({ ...item, status }) });
+  if (entry.transcript_status === 'pending') {
+    api('/api/transcribe/' + encodeURIComponent(entry.id), { method: 'POST', timeout: 300000 }).catch(() => {});
+  }
+  return { entry, matched: true };
+}
+
 // Reads the signed-in user's YouTube watch history through a youtube.com tab (same-origin, their cookies).
 async function readYouTubeHistory() {
   let [tab] = await chrome.tabs.query({ url: 'https://www.youtube.com/*' });
@@ -105,7 +122,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const handlers = {
     KT_CAPTURE: () => captureTab(msg.tabId),
     KT_AUTO_CAPTURE: () => captureTab(sender.tab.id, { auto: true }),
-    KT_INGEST_URL: () => api('/api/ingest-url', { method: 'POST', body: JSON.stringify({ url: msg.url, status: msg.status }), timeout: 45000 }),
+    KT_INGEST_URL: () => podcastLink(msg.url) ? savePodcast(msg.url, msg.status) : api('/api/ingest-url', { method: 'POST', body: JSON.stringify({ url: msg.url, status: msg.status }), timeout: 45000 }),
+    KT_SAVE_PODCAST: async () => {
+      const r = await savePodcast(msg.url, msg.status || 'watched');
+      if (msg.tabId) { chrome.action.setBadgeText({ tabId: msg.tabId, text: '✓' }); chrome.action.setBadgeBackgroundColor({ tabId: msg.tabId, color: '#2740FF' }); }
+      return r;
+    },
     KT_HISTORY: () => readYouTubeHistory(),
     KT_EXISTS: () => api('/api/entries/exists', { method: 'POST', body: JSON.stringify({ ids: msg.ids }) }),
     KT_OPEN_PICKER: () => chrome.tabs.create({ url: chrome.runtime.getURL('picker.html') }).then(() => true),
