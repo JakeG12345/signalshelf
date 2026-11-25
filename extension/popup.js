@@ -78,7 +78,7 @@ async function init() {
   }
   $('#srv').textContent = !h.ok ? 'offline' : !ready ? 'key needed' : `${h.data.mode || 'local'} · ${h.data.entries} items`;
   if (!ready) {
-    setMsg(h.ok ? 'Paste your key from the app\'s Account panel into Server settings.' : h.error, 'err');
+    setMsg(h.ok ? 'Copy your key from the app (Settings, Chrome) into Server settings.' : h.error, 'err');
     $('#save').disabled = true;
     $('#srv-settings').open = true;
     return;

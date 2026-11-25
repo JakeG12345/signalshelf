@@ -24,7 +24,7 @@ async function api(path, opts = {}) {
       : `Can't reach ${base}. Check the URL in Server settings.`);
   }
   const data = await res.json().catch(() => ({}));
-  if (res.status === 401) throw new Error('Key missing or wrong. Paste it from the app\'s Account panel into Server settings.');
+  if (res.status === 401) throw new Error('Key missing or wrong. Copy it from the app (Settings, Chrome) into Server settings.');
   if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
   return data;
 }

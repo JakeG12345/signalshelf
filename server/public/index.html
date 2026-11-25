@@ -231,6 +231,7 @@
       <button id="btn-sync" hidden>Sync Apple Podcasts</button>
       <button id="btn-import">Import</button>
       <button id="btn-connect" hidden>Account</button>
+      <button id="btn-settings" hidden>Settings</button>
       <a id="btn-people" class="hbtn" href="/people" hidden>People</a>
       <button id="btn-shelf">Public Shelf</button>
     </div>
@@ -389,6 +390,13 @@
       </form>
     </div>
 
+  </div>
+</div>
+
+<!-- Settings: connect iPhone, Claude and Chrome; private link; your data -->
+<div id="settings" class="modal" role="dialog" aria-modal="true">
+  <div class="mc connect" style="max-width:620px">
+    <div class="mhead"><h2 style="margin:0;flex:1">Settings</h2><button class="x" data-close>×</button></div>
     <details class="cgroup" id="a-connect">
       <summary>iPhone</summary>
       <div class="crow">
@@ -590,6 +598,7 @@ function applyMeta(meta) {
   const caps = META.capabilities || {};
   $('#btn-sync').hidden = !caps.podcastsSync;
   $('#btn-connect').hidden = META.mode !== 'cloud';
+  $('#btn-settings').hidden = META.mode !== 'cloud';
   if (META.mode === 'cloud' && !$('#home-link')) { // logo goes back to the landing page
     const h = document.querySelector('header h1');
     h.innerHTML = `<a id="home-link" href="/" style="color:inherit;text-decoration:none;display:flex;align-items:center;gap:10px">${h.innerHTML}</a>`;
@@ -1099,13 +1108,6 @@ function openAccount(focusLogin = false) {
   $('#p-note').textContent = social ? 'Notes and transcripts are always private.' : 'Your shelf is private. Only you can see it.';
   $('#a-who').textContent = hasAccount ? '' : 'Keep your shelf and use it anywhere.';
   $('#a-who').hidden = hasAccount;
-  $('#a-synctext').textContent = hasAccount ? 'Opens your shelf without a password. Keep it private.' : 'The only way back to this shelf until you sign up. Keep it private.';
-  $('#c-sync-copy').dataset.copytext = META.syncUrl || '';
-  $('#c-shortcut-copy').dataset.copytext = META.shortcutUrl || '';
-  $('#c-mcp-copy').dataset.copytext = META.mcpUrl || '';
-  $('#c-key-copy').dataset.copytext = key || '';
-  $('#c-shortcut-install').hidden = !META.shortcutInstallUrl;
-  $('#sc-manual').hidden = !!META.shortcutInstallUrl;
   $('#connect').classList.add('open'); document.body.style.overflow = 'hidden';
   if (focusLogin && !hasAccount) setTimeout(() => $('#li-handle').focus(), 50);
 }
@@ -1119,6 +1121,18 @@ $('#a-pass').addEventListener('click', e => {
 });
 $('#a-usepass-link').addEventListener('click', e => { e.preventDefault(); $('#a-usepass').hidden = true; $('#a-pass').hidden = false; $('#su-handle').focus(); });
 $('#btn-connect').addEventListener('click', () => openAccount());
+function openSettings() {
+  const hasAccount = !!META.user?.has_password;
+  $('#a-synctext').textContent = hasAccount ? 'Opens your shelf without a password. Keep it private.' : 'The only way back to this shelf until you sign up. Keep it private.';
+  $('#c-sync-copy').dataset.copytext = META.syncUrl || '';
+  $('#c-shortcut-copy').dataset.copytext = META.shortcutUrl || '';
+  $('#c-mcp-copy').dataset.copytext = META.mcpUrl || '';
+  $('#c-key-copy').dataset.copytext = getToken() || '';
+  $('#c-shortcut-install').hidden = !META.shortcutInstallUrl;
+  $('#sc-manual').hidden = !!META.shortcutInstallUrl;
+  $('#settings').classList.add('open'); document.body.style.overflow = 'hidden';
+}
+$('#btn-settings').addEventListener('click', openSettings);
 $('#c-shortcut-install').addEventListener('click', () => { if (META.shortcutInstallUrl) location.href = META.shortcutInstallUrl; });
 
 $('#signupform').addEventListener('submit', async e => {
