@@ -55,6 +55,7 @@ Hi-fi faceplate look: plate `#E6E8E2`, panel `#F4F5F0`, ink `#15171A`, mute `#5F
 
 ## Open ideas (ask Ryan before starting)
 
+0. Chrome Web Store: set `CHROME_EXTENSION_URL` in `worker/wrangler.toml` (chromewebstore.google.com/detail/...) once approved; it shows "Add to Chrome" on the landing page and in Settings, Chrome.
 1. One-tap Shortcut: set `SHORTCUT_ICLOUD_URL` in `worker/wrangler.toml` once Ryan shares the iCloud link.
 3. Share image (OG card) for profiles, for posting on X.
 4. Password reset by email (needs an email provider such as Resend + a domain).

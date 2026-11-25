@@ -1,7 +1,7 @@
 // Public landing page at "/".
 import { esc, FONT_LINKS, BASE_CSS, RATING_LABELS, barsHtml, LOGO_SVG } from '../../shared/theme.js';
 
-export function renderLanding({ origin, social = true, shelves = [], top = [], featured = {} }) {
+export function renderLanding({ origin, social = true, shelves = [], top = [], featured = {}, extensionUrl = null }) {
   const title = 'Signal Shelf: track what you watch';
   const desc = social ? 'Track the YouTube videos and podcasts you watch, with transcripts. Connect Claude or export them, and share your shelf.'
     : 'Track the YouTube videos and podcasts you watch, with transcripts. Connect Claude or export them.';
@@ -138,6 +138,7 @@ ${FONT_LINKS}
       <p class="lede">Save YouTube videos and podcasts with their transcripts. Rate them${social ? ', share your shelf' : ''}.</p>
       <div class="ctas">
         <a class="btn solid" href="/app/">Start a shelf</a>
+        ${extensionUrl ? `<a class="btn" href="${esc(extensionUrl)}" target="_blank" rel="noopener">Add to Chrome</a>` : ''}
         ${social && shelves[0] ? `<a class="btn" href="/people">Browse people</a>` : ''}
       </div>
       <p class="note">Free. No account needed.</p>

@@ -163,6 +163,8 @@ try {
     assert.equal(m.mcpUrl, `${base}/mcp/${A}`); assert.equal(m.syncUrl, `${base}/app/#k=${A}`);
     assert.equal(m.shortcutUrl, `${base}/app/#k=${A}&add=`); assert.equal(m.profileUrl, `${base}/u/ryan_builds`);
     assert.equal(m.shortcutInstallUrl, null); // empty SHORTCUT_ICLOUD_URL = manual steps only
+    assert.equal(m.extensionUrl, null); // empty CHROME_EXTENSION_URL = no install button
+    assert.ok(!(await (await fetch(base + '/')).text()).includes('Add to Chrome'));
   });
 
   await t('accounts: sign up, log in on another device, log out', async () => {

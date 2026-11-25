@@ -25,6 +25,7 @@ const html = (body, status = 200, headers = {}) =>
   new Response(body, { status, headers: { 'Content-Type': 'text/html; charset=utf-8', ...headers } });
 
 // Sharing (public profiles, People, follows, Following feed, landing picks). Off until there's interest.
+const extensionUrl = env => (/^https:\/\/chromewebstore\.google\.com\/detail\//.test(env.CHROME_EXTENSION_URL || '') ? env.CHROME_EXTENSION_URL : null);
 const socialOn = env => String(env.SOCIAL_ENABLED || '').toLowerCase() === 'true';
 
 function limitsFrom(env) {
@@ -137,6 +138,7 @@ async function privateApi(request, url, ctx) {
       mcpUrl: `${url.origin}/mcp/${key}`,
       syncUrl: `${url.origin}/app/#k=${key}`,
       shortcutUrl: `${url.origin}/app/#k=${key}&add=`,
+      extensionUrl: extensionUrl(env),
       shortcutInstallUrl: /^https:\/\/www\.icloud\.com\/shortcuts\//.test(env.SHORTCUT_ICLOUD_URL || '') ? env.SHORTCUT_ICLOUD_URL : null,
       monetizationModels: MONETIZATION_MODELS, sources: SOURCES, statuses: STATUSES, stats: await store.stats()
     });
@@ -350,8 +352,8 @@ export default {
           ...(user ? { entries: (await createStore(db, user.id).stats()).total, handle: user.handle } : {}) });
       }
       if (path === '/' || path === '') {
-        if (!socialOn(env)) return html(renderLanding({ origin: url.origin, social: false }), 200, { 'Cache-Control': 'public, max-age=60' });
-        return html(renderLanding({ origin: url.origin, social: true, shelves: (await listPeople(db, { limit: 8 })).filter(p => p.items > 0), top: await topSignal(db), featured: await featured(db) }), 200, { 'Cache-Control': 'public, max-age=60' });
+        if (!socialOn(env)) return html(renderLanding({ origin: url.origin, social: false, extensionUrl: extensionUrl(env) }), 200, { 'Cache-Control': 'public, max-age=60' });
+        return html(renderLanding({ origin: url.origin, social: true, extensionUrl: extensionUrl(env), shelves: (await listPeople(db, { limit: 8 })).filter(p => p.items > 0), top: await topSignal(db), featured: await featured(db) }), 200, { 'Cache-Control': 'public, max-age=60' });
       }
       if (path === '/terms' || path === '/terms/') return html(renderTerms(url.origin), 200, { 'Cache-Control': 'public, max-age=3600' });
       if (path === '/privacy' || path === '/privacy/') return html(renderPrivacy(url.origin), 200, { 'Cache-Control': 'public, max-age=3600' });

@@ -425,6 +425,7 @@
       <div class="crow">
         <div><b>Chrome extension</b><span id="c-ext-text">Saves videos and podcast episodes as you watch.</span></div>
         <button class="primary" type="button" id="c-ext-connect" hidden>Connect</button>
+        <a class="hbtn primary" id="c-ext-get" href="#" target="_blank" rel="noopener" hidden>Add to Chrome</a>
         <button class="copy" type="button" id="c-key-copy">Copy key</button>
       </div>
     </details>
@@ -1131,7 +1132,10 @@ function openSettings() {
   $('#c-key-copy').dataset.copytext = getToken() || '';
   const ext = document.documentElement.dataset.ssExtension === '1';
   $('#c-ext-connect').hidden = !ext;
-  $('#c-ext-text').textContent = ext ? 'Installed. Connect it to this shelf.' : 'Saves videos and podcast episodes as you watch. Paste the key in its Server settings.';
+  $('#c-ext-get').hidden = ext || !META.extensionUrl;
+  if (META.extensionUrl) $('#c-ext-get').href = META.extensionUrl;
+  $('#c-key-copy').hidden = !ext && !!META.extensionUrl;
+  $('#c-ext-text').textContent = ext ? 'Installed. Connect it to this shelf.' : 'Saves videos and podcast episodes as you watch.';
   $('#c-shortcut-install').hidden = !META.shortcutInstallUrl;
   $('#sc-manual').hidden = !!META.shortcutInstallUrl;
   $('#settings').classList.add('open'); document.body.style.overflow = 'hidden';
