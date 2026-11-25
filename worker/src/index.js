@@ -9,7 +9,7 @@ import { ensureSchema, createStore } from './store.js';
 import { handleMcp } from './mcp.js';
 import { renderLanding, renderNotFound, renderPrivacy, renderTerms } from './landing.js';
 import { renderProfileHtml, renderPeopleHtml, publicItem } from '../../shared/profile-render.js';
-import { createAnonymousUser, resolveUser, updateProfile, listPeople, topSignal, userByHandle, followCounts, setFollow, isFollowing, listFollowing, feed, rateLimit, looksLikeKey, createAccount, changePassword, login, logout, googleEnabled, googleStart, googleCallback } from './accounts.js';
+import { createAnonymousUser, resolveUser, updateProfile, listPeople, topSignal, userByHandle, followCounts, setFollow, isFollowing, listFollowing, feed, featured, rateLimit, looksLikeKey, createAccount, changePassword, login, logout, googleEnabled, googleStart, googleCallback } from './accounts.js';
 import { YT_STATE_PREFIX, youtubeLikesStart, youtubeLikesCallback, takeYoutubeLikes, searchPodcasts, podcastEpisodes } from './imports.js';
 import { captureLink } from '../../shared/capture.js';
 import { supadataProvider } from './transcripts.js';
@@ -295,7 +295,7 @@ export default {
           ...(user ? { entries: (await createStore(db, user.id).stats()).total, handle: user.handle } : {}) });
       }
       if (path === '/' || path === '') {
-        return html(renderLanding({ origin: url.origin, shelves: (await listPeople(db, { limit: 8 })).filter(p => p.items > 0), top: await topSignal(db) }), 200, { 'Cache-Control': 'public, max-age=60' });
+        return html(renderLanding({ origin: url.origin, shelves: (await listPeople(db, { limit: 8 })).filter(p => p.items > 0), top: await topSignal(db), featured: await featured(db) }), 200, { 'Cache-Control': 'public, max-age=60' });
       }
       if (path === '/terms' || path === '/terms/') return html(renderTerms(url.origin), 200, { 'Cache-Control': 'public, max-age=3600' });
       if (path === '/privacy' || path === '/privacy/') return html(renderPrivacy(url.origin), 200, { 'Cache-Control': 'public, max-age=3600' });

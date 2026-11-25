@@ -193,6 +193,22 @@ export async function topSignal(db, limit = 6) {
   return results;
 }
 
+/**
+ * The single most-loved video and podcast across public shelves: most "Must watch" (5 bar) ratings,
+ * then most 4+ ratings, then highest average. Public columns only.
+ */
+export async function featured(db) {
+  const pick = source => db.prepare(`
+    SELECT e.id, e.source, MAX(e.title) AS title, MAX(e.creator) AS creator, MAX(e.url) AS url,
+           MAX(CASE WHEN e.thumbnail LIKE 'https://%' THEN e.thumbnail END) AS thumbnail,
+           SUM(e.signal_rating = 5) AS must, COUNT(*) AS shelves, ROUND(AVG(e.signal_rating), 1) AS avg
+    FROM entries e JOIN users u ON u.id = e.user_id AND ${PUBLIC_USER}
+    WHERE e.signal_rating >= 4 AND e.source = ? AND e.url LIKE 'https://%'
+    GROUP BY e.id ORDER BY must DESC, shelves DESC, avg DESC, MAX(e.updated_at) DESC LIMIT 1`).bind(source).first();
+  const [video, podcast] = await Promise.all([pick('youtube'), pick('apple_podcasts')]);
+  return { video, podcast };
+}
+
 // ---------- Username + password accounts ----------
 // PBKDF2-SHA256 via WebCrypto. Iterations are kept modest to fit Workers' CPU limits; logins are rate limited.
 const PBKDF2_ITERATIONS = 25000;

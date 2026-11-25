@@ -26,7 +26,7 @@ Owner: Ryan (GitHub JakeG12345). Built as day 1 of a "launch a product every day
 
 ```bash
 npm ci && npm test                         # 33 checks: shared logic, importers, local server, stdio MCP
-cd worker && npm ci && npm test            # 28 checks: multi-user Worker under wrangler dev + remote MCP + Google sign-in, YouTube likes and podcast search (local mock)
+cd worker && npm ci && npm test            # 29 checks: multi-user Worker under wrangler dev + remote MCP + Google sign-in, YouTube likes and podcast search (local mock)
 cd worker && npm run dev                   # local cloud dev server
 ```
 
@@ -36,7 +36,7 @@ Check a deploy: `curl -s https://api.github.com/repos/JakeG12345/signalshelf/act
 
 ## Rules that matter
 
-- **Privacy:** personal notes and transcripts never leave a user's own API responses. Profiles, feed, `/people`, landing "top rated" and `shelf.json` use `publicItem` / explicit public columns only. Add a test whenever you touch these.
+- **Privacy:** personal notes and transcripts never leave a user's own API responses. Profiles, feed, `/people`, landing "top rated" and "most must watch" (`featured`) and `shelf.json` use `publicItem` / explicit public columns only. Add a test whenever you touch these.
 - **Every query is user-scoped** in the Worker (`createStore(db, userId)`, `buildEntriesQuery({ userId })`). Entry ids (`yt_<id>`, `pod_<uuid>`, `web_<hash>`) are only unique per user.
 - **Re-captures never overwrite** a user's rating, tags, takeaways or notes, or a transcript with an empty one (`buildUpsert`).
 - **Instant UI:** the app updates the screen first and syncs in the background with rollback (`sync()`, `replaceCard()`, cached first paint). Keep new interactions optimistic.

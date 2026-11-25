@@ -1,11 +1,29 @@
 // Public landing page at "/".
 import { esc, FONT_LINKS, BASE_CSS, RATING_LABELS, barsHtml, LOGO_SVG } from '../../shared/theme.js';
 
-export function renderLanding({ origin, shelves = [], top = [] }) {
+export function renderLanding({ origin, shelves = [], top = [], featured = {} }) {
   const title = 'Signal Shelf: track what you watch';
   const desc = 'Track the YouTube videos and podcasts you watch, with transcripts. Connect Claude or export them, and share your shelf.';
 
-  const topRows = top.map(t => `
+  const picks = [['Video', featured.video], ['Podcast', featured.podcast]].filter(([, f]) => f);
+  const pickIds = new Set(picks.map(([, f]) => f.id));
+  const ytThumb = f => { const m = String(f.id).match(/^yt_([A-Za-z0-9_-]{11})$/); return m ? `https://i.ytimg.com/vi/${m[1]}/hqdefault.jpg` : null; };
+  const pickCards = picks.map(([kind, f]) => {
+    const img = f.thumbnail || ytThumb(f);
+    const votes = f.must ? `${f.must} must watch` : `${f.shelves} high signal`;
+    return `
+      <article class="pick ${kind.toLowerCase()}">
+        <a class="art" href="${esc(f.url)}" target="_blank" rel="noopener noreferrer">${img ? `<img src="${esc(img)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</a>
+        <div class="pbody">
+          <span class="kind">${kind}</span>
+          <a class="ptitle" href="${esc(f.url)}" target="_blank" rel="noopener noreferrer">${esc(f.title)}</a>
+          <span class="by">${esc(f.creator || '')}</span>
+          <span class="score">${barsHtml(Math.round(f.avg))}<span>${votes}</span></span>
+          <a class="add" href="/app/#add=${esc(encodeURIComponent(f.url))}">Add to my shelf</a>
+        </div>
+      </article>`;
+  }).join('');
+  const topRows = top.filter(t => !pickIds.has(t.id)).map(t => `
       <li><a href="${esc(t.url)}" target="_blank" rel="noopener noreferrer">${esc(t.title)}</a>
         <span class="by">${esc(t.creator || '')}</span>
         <span class="score">${barsHtml(Math.round(t.avg))}<span>on ${t.shelves} shel${t.shelves === 1 ? 'f' : 'ves'}</span></span>
@@ -72,6 +90,17 @@ ${FONT_LINKS}
   .score { display:flex; gap:10px; align-items:flex-end; font-size:14px; color:var(--mute); grid-row:1 / span 2; grid-column:2; }
   .add { grid-row:1 / span 2; grid-column:3; font-size:14px; font-weight:650; color:var(--signal); text-decoration:none; }
   .add:hover { text-decoration:underline; }
+  .picks { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .pick { border:1.5px solid var(--line); border-radius:6px; background:var(--panel); padding:14px; display:grid; grid-template-columns:auto minmax(0, 1fr); gap:14px; align-items:start; }
+  .pick .art { display:block; width:160px; aspect-ratio:16/9; border-radius:4px; overflow:hidden; background:var(--line); }
+  .pick.podcast .art { width:96px; aspect-ratio:1; }
+  .pick .art img { width:100%; height:100%; object-fit:cover; display:block; }
+  .pick .pbody { display:flex; flex-direction:column; gap:4px; min-width:0; }
+  .pick .kind { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--signal); }
+  .pick .ptitle { font-weight:700; font-size:17px; line-height:1.3; text-decoration:none; }
+  .pick .ptitle:hover { color:var(--signal); }
+  .pick .score, .pick .add { grid-row:auto; grid-column:auto; }
+  .pick .score { margin-top:4px; }
   ul.shelves { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); column-gap:28px; border-top:0; }
   ul.shelves li { display:block; border-top:1px solid var(--line); border-bottom:0; }
   ul.shelves a { text-decoration:none; display:block; }
@@ -87,6 +116,8 @@ ${FONT_LINKS}
     .steps div, .steps div + div { padding:18px 0; border-left:0; }
     .steps div + div { border-top:1px solid var(--line); }
     ul.top li { grid-template-columns:1fr; }
+    .picks { grid-template-columns:1fr; }
+    .pick .art { width:112px; } .pick.podcast .art { width:72px; }
     .score, .add { grid-column:1; grid-row:auto; }
     .also { columns:1; }
     .bars.xl { height:72px; gap:8px; } .bars.xl > * { width:22px; }
@@ -127,7 +158,12 @@ ${FONT_LINKS}
     <div><span class="n wide">3</span><h2>Use</h2><p>Connect Claude or export. Share your shelf.</p></div>
   </section>
 
-  ${top.length ? `<section class="block">
+  ${picks.length ? `<section class="block">
+    <h2 class="wide">Most must watch</h2>
+    <div class="picks">${pickCards}</div>
+  </section>` : ''}
+
+  ${topRows.trim() ? `<section class="block">
     <h2 class="wide">Top rated right now</h2>
     <ul class="rows top">${topRows}</ul>
   </section>` : ''}
