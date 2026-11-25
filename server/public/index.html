@@ -143,7 +143,7 @@
   .connect li { margin-bottom:6px; }
   .connect p { margin:6px 0; }
   .copy { font-size:13px; padding:4px 10px; border-color:var(--line); }
-  .src { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:14px; }
+  .src { margin-top:14px; }
   .src > div { border:1.5px solid var(--line); border-radius:6px; padding:16px; background:var(--panel); }
   .src h3 { margin:0 0 4px; font-size:17px; }
   .src p { margin:0 0 12px; color:var(--mute); font-size:14px; }
@@ -163,7 +163,6 @@
   .picklist li.saved .when::before { content:'Saved '; font-weight:650; color:var(--ink); }
   .progress { height:4px; background:var(--line); margin-top:10px; border-radius:2px; overflow:hidden; }
   .progress i { display:block; height:100%; width:0; background:var(--signal); transition:width .2s; }
-  @media (max-width:640px) { .src { grid-template-columns:1fr; } }
   @media (prefers-reduced-motion: reduce) { .toast { transition:none; } .card.pending .ph { animation:none; } }
   @media (max-width:640px) {
     .fitem { grid-template-columns:96px 1fr; gap:12px; }
@@ -201,7 +200,6 @@
       <button id="btn-import">Import</button>
       <button id="btn-connect" hidden>Account</button>
       <a id="btn-people" class="hbtn" href="/people" hidden>People</a>
-      <button id="btn-profile" hidden>Profile</button>
       <button id="btn-shelf">Public Shelf</button>
     </div>
   </header>
@@ -316,43 +314,41 @@
       <button class="primary" type="button" id="a-google-btn" style="width:100%;margin-top:8px">Continue with Google</button>
     </div>
 
-    <div id="a-signup">
-      <label class="lbl">Create your account</label>
-      <p class="meta" style="margin-top:0">Keep this shelf, log in anywhere, and get a public profile others can follow. Free.</p>
-      <form id="signupform" class="grid2">
+    <p id="a-usepass" hidden style="text-align:center;margin:12px 0 0"><a href="#" id="a-usepass-link">Use a password instead</a></p>
+
+    <div id="a-pass">
+      <form id="signupform" class="grid2" style="margin-top:12px">
         <input id="su-handle" placeholder="Username" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="username" maxlength="21" />
         <input id="su-pass" type="password" placeholder="Password (8+ characters)" autocomplete="new-password" />
         <button class="primary" type="submit" style="grid-column:1/-1">Create account</button>
+        <p class="meta" style="grid-column:1/-1;margin:0">Have an account? <a href="#" data-passmode="login">Log in</a></p>
       </form>
-    </div>
-
-    <div id="a-login">
-      <label class="lbl">Already have an account?</label>
-      <form id="loginform" class="grid2">
+      <form id="loginform" class="grid2" style="margin-top:12px" hidden>
         <input id="li-handle" placeholder="Username" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="username" />
         <input id="li-pass" type="password" placeholder="Password" autocomplete="current-password" />
-        <button type="submit" style="grid-column:1/-1">Log in</button>
+        <button class="primary" type="submit" style="grid-column:1/-1">Log in</button>
+        <p class="meta" style="grid-column:1/-1;margin:0">New here? <a href="#" data-passmode="signup">Create account</a></p>
       </form>
     </div>
 
     <div id="a-signedin" hidden>
-      <div class="row" style="justify-content:space-between;margin-top:8px">
-        <span>Logged in as <b id="a-handle"></b>. <a href="#" id="a-viewprofile">View profile</a></span>
-        <button id="a-logout" type="button">Log out</button>
-      </div>
-      <label class="lbl">Your profile</label>
-      <form id="profileform">
+      <form id="profileform" style="margin-top:12px">
         <input id="p-handle" placeholder="Username" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="username" maxlength="21" style="width:100%;margin-bottom:8px">
         <div class="grid2">
-          <input id="p-name" placeholder="Display name" maxlength="60" autocomplete="name">
+          <input id="p-name" placeholder="Name" maxlength="60" autocomplete="name">
           <input id="p-bio" placeholder="One line about you" maxlength="160">
         </div>
-        <label class="switchrow"><input type="checkbox" id="p-private"> Private profile (only you can see your shelf)</label>
-        <p class="meta" style="margin:8px 0 10px">Your profile shows what you save, your ratings, tags and takeaways. Notes and transcripts are always private.</p>
-        <button type="submit">Save profile</button>
+        <label class="switchrow"><input type="checkbox" id="p-private"> Private profile</label>
+        <p class="meta" style="margin:8px 0 10px">Notes and transcripts are always private.</p>
+        <div class="row" style="justify-content:space-between">
+          <button class="primary" type="submit">Save</button>
+          <span><a href="#" id="a-viewprofile">View profile</a> · <a href="#" id="a-logout">Log out</a></span>
+        </div>
       </form>
     </div>
 
+    <details id="a-connect">
+    <summary>Connect iPhone, Claude and Chrome</summary>
     <label class="lbl">Private link</label>
     <p class="meta" style="margin-top:0" id="a-synctext"></p>
     <code id="c-sync"></code><button class="copy" data-copy="c-sync">Copy</button>
@@ -388,6 +384,8 @@
     <label class="lbl">Advanced · open a shelf from a private link or key</label>
     <form class="row" id="switchform"><input id="switchkey" placeholder="Paste a private link or key" autocapitalize="none" autocorrect="off" style="flex:1;min-width:0" /><button type="submit">Switch</button></form>
 
+    </details>
+
     <label class="lbl">Your data</label>
     <p><a href="#" id="c-export-md">Export transcripts (Markdown, for Claude or any AI)</a><br><a href="#" id="c-export">Download all data (JSON)</a> · <a href="#" id="c-delete" style="color:var(--red)">Delete my shelf</a></p>
   </div>
@@ -399,31 +397,33 @@
     <div class="mhead"><h2 style="flex:1" id="i-title">Import from history</h2><button class="x" data-close>×</button></div>
 
     <div id="i-sources">
-      <p class="meta">Pick from what you've already watched or listened to. Nothing is saved until you choose.</p>
-      <div class="src">
+      <div class="row" id="i-choose" style="margin-top:14px">
+        <button type="button" class="primary" data-src="yt" style="flex:1">YouTube</button>
+        <button type="button" class="primary" data-src="pod" style="flex:1">Podcasts</button>
+      </div>
+      <div class="src" id="i-src-yt" hidden>
         <div>
-          <h3>YouTube</h3>
-          <p>From your Google watch history file.</p>
+          <p id="i-ext">Fastest: in the Chrome extension, click <b>Pick from YouTube history</b>.</p>
+          <p id="i-ext-or">Or use your Google history file:</p>
           <ol>
             <li>Open <a href="https://takeout.google.com/settings/takeout/custom/youtube" target="_blank" rel="noopener">Google Takeout for YouTube</a>.</li>
-            <li>Under <b>All YouTube data included</b>, keep only <b>history</b>. Click <b>Next step</b> and create the export.</li>
+            <li>Under <b>All YouTube data included</b>, keep only <b>history</b>. Create the export.</li>
             <li>When Google emails it, unzip and choose <code>watch-history</code> here.</li>
           </ol>
           <label class="filepick"><input type="file" id="i-yt" accept=".json,.html,.htm,application/json,text/html"><span class="primary" style="display:inline-block;background:var(--ink);color:var(--plate);padding:9px 14px;border-radius:4px;font-weight:650">Choose watch-history file</span></label>
-          <p style="margin:12px 0 0">On a computer, the Chrome extension can do this instantly: <b>Pick from YouTube history</b>.</p>
         </div>
+      </div>
+      <div class="src" id="i-src-pod" hidden>
         <div>
-          <h3>Apple Podcasts (Mac)</h3>
-          <p>From the Podcasts library on your Mac.</p>
           <ol>
-            <li>Quit the Podcasts app.</li>
+            <li>On your Mac, quit the Podcasts app.</li>
             <li>In Finder, choose <b>Go → Go to Folder</b> and paste:<br><code>~/Library/Group Containers/243LU875E5.groups.com.apple.podcasts/Documents</code></li>
             <li>Choose <code>MTLibrary.sqlite</code> here.</li>
           </ol>
-          <label class="filepick"><input type="file" id="i-pod" accept=".sqlite,.db,application/x-sqlite3,application/vnd.sqlite3"><span style="display:inline-block;background:var(--ink);color:var(--plate);padding:9px 14px;border-radius:4px;font-weight:650">Choose MTLibrary.sqlite</span></label>
-          <p style="margin:12px 0 0">The file stays on your device. Only what you pick is saved.</p>
+          <label class="filepick"><input type="file" id="i-pod" accept=".sqlite,.db,application/x-sqlite3,application/vnd.sqlite3"><span class="primary" style="display:inline-block;background:var(--ink);color:var(--plate);padding:9px 14px;border-radius:4px;font-weight:650">Choose MTLibrary.sqlite</span></label>
         </div>
       </div>
+      <p class="meta" id="i-note" hidden style="margin-top:12px">The file stays on your device. Only what you pick is saved.</p>
     </div>
 
     <div id="i-pick" hidden>
@@ -543,7 +543,6 @@ function applyMeta(meta) {
   const social = !!META.capabilities?.social;
   $('#btn-shelf').hidden = social;          // the old "publish a shelf" flow is only for the Mac version
   $('#btn-people').hidden = !social;
-  $('#btn-profile').hidden = !social;
   $('#viewtabs').hidden = !social;
   const s = META.stats;
   const n = (v, one, many) => `<b>${v || 0}</b> ${v === 1 ? one : many}`;
@@ -845,17 +844,20 @@ function openAccount(focusLogin = false) {
   const key = getToken();
   const u = META.user || {};
   const hasAccount = !!u.has_password;
-  $('#a-signup').hidden = hasAccount;
-  $('#a-login').hidden = hasAccount;
+  const google = !!META.googleSignIn && !hasAccount;
   $('#a-signedin').hidden = !hasAccount;
-  $('#a-google').hidden = hasAccount || !META.googleSignIn;
+  $('#a-google').hidden = !google;
+  $('#a-usepass').hidden = !google || focusLogin;
+  $('#a-pass').hidden = hasAccount || (google && !focusLogin);
+  passMode(focusLogin ? 'login' : 'signup');
+  $('#connect h2').textContent = hasAccount ? 'Account' : 'Sign up';
   $('#p-handle').value = u.handle || '';
-  $('#a-handle').textContent = u.handle ? '@' + u.handle : '';
   $('#su-handle').value = u.handle || '';
   $('#p-name').value = u.display_name || '';
   $('#p-bio').value = u.bio || '';
   $('#p-private').checked = !!u.is_private;
-  $('#a-who').innerHTML = hasAccount ? '' : 'You\'re using a guest shelf on this device. Create an account to keep it and use it anywhere.';
+  $('#a-who').textContent = hasAccount ? '' : 'Keep your shelf and use it anywhere.';
+  $('#a-who').hidden = hasAccount;
   $('#a-synctext').textContent = hasAccount
     ? 'Opens your shelf without typing your password (handy for the iPhone Shortcut). Don\'t share it.'
     : 'Until you create an account, this link is the only way back to this shelf from another device. Don\'t share it.';
@@ -869,6 +871,15 @@ function openAccount(focusLogin = false) {
   $('#connect').classList.add('open'); document.body.style.overflow = 'hidden';
   if (focusLogin && !hasAccount) setTimeout(() => $('#li-handle').focus(), 50);
 }
+function passMode(mode) {
+  $('#signupform').hidden = mode === 'login';
+  $('#loginform').hidden = mode !== 'login';
+}
+$('#a-pass').addEventListener('click', e => {
+  const a = e.target.closest('[data-passmode]');
+  if (a) { e.preventDefault(); passMode(a.dataset.passmode); }
+});
+$('#a-usepass-link').addEventListener('click', e => { e.preventDefault(); $('#a-usepass').hidden = true; $('#a-pass').hidden = false; $('#su-handle').focus(); });
 $('#btn-connect').addEventListener('click', () => openAccount());
 $('#c-shortcut-install').addEventListener('click', () => { if (META.shortcutInstallUrl) location.href = META.shortcutInstallUrl; });
 
@@ -910,7 +921,8 @@ $('#loginform').addEventListener('submit', async e => {
   } catch (err) { toast(err.message, true); }
 });
 
-$('#a-logout').addEventListener('click', async () => {
+$('#a-logout').addEventListener('click', async e => {
+  e.preventDefault();
   if (!confirm('Log out on this device? You can log back in with your username and password.')) return;
   try { await api('/api/auth/logout', { method: 'POST' }); } catch {}
   setToken(''); location.hash = ''; location.reload();
@@ -958,8 +970,19 @@ const IMPORT = { items: [], saved: new Set(), selected: new Set(), shown: [] };
 let importers;
 const loadImporters = async () => (importers ||= await import('./importers.js'));
 
+// Phones and tablets can't reach the Mac Podcasts library or run the Chrome extension.
+const IS_MOBILE = /iPhone|iPad|iPod|Android/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent));
+function importSource(src) {
+  $('#i-choose').hidden = !!src || IS_MOBILE;
+  $('#i-src-yt').hidden = src !== 'yt';
+  $('#i-src-pod').hidden = src !== 'pod';
+  $('#i-note').hidden = !src;
+  $('#i-ext').hidden = $('#i-ext-or').hidden = IS_MOBILE;
+  $('#i-title').textContent = src === 'yt' ? 'Import from YouTube' : src === 'pod' ? 'Import from Podcasts' : 'Import';
+}
+$('#i-choose').addEventListener('click', e => { const b = e.target.closest('[data-src]'); if (b) importSource(b.dataset.src); });
 function openImport() {
-  $('#i-sources').hidden = false; $('#i-pick').hidden = true; $('#i-title').textContent = 'Import from history';
+  $('#i-sources').hidden = false; $('#i-pick').hidden = true; importSource(IS_MOBILE ? 'yt' : null);
   $('#i-yt').value = ''; $('#i-pod').value = '';
   $('#import').classList.add('open'); document.body.style.overflow = 'hidden';
 }
@@ -1009,7 +1032,7 @@ async function readFile(input) {
 }
 
 $('#btn-import').addEventListener('click', openImport);
-$('#i-back').addEventListener('click', () => { $('#i-sources').hidden = false; $('#i-pick').hidden = true; $('#i-title').textContent = 'Import from history'; });
+$('#i-back').addEventListener('click', () => { $('#i-sources').hidden = false; $('#i-pick').hidden = true; importSource(IS_MOBILE ? 'yt' : null); });
 $('#i-range').addEventListener('change', renderCandidates);
 $('#i-q').addEventListener('input', renderCandidates);
 $('#i-all').addEventListener('click', () => { IMPORT.shown.forEach(i => { if (!IMPORT.saved.has(i.key)) IMPORT.selected.add(i.key); }); renderCandidates(); });
@@ -1078,10 +1101,6 @@ $('#i-save').addEventListener('click', async () => {
 });
 
 // ---------- Profiles, People, Following ----------
-$('#btn-profile').addEventListener('click', () => {
-  if (META.user?.handle && META.user?.has_password) location.href = `/u/${META.user.handle}`;
-  else { openAccount(); toast('Create an account to get your public profile.'); }
-});
 $('#a-viewprofile').addEventListener('click', e => { e.preventDefault(); if (META.user?.handle) location.href = `/u/${META.user.handle}`; });
 $('#profileform').addEventListener('submit', async e => {
   e.preventDefault();
@@ -1089,7 +1108,7 @@ $('#profileform').addEventListener('submit', async e => {
   const handle = $('#p-handle').value.trim().replace(/^@/, '').toLowerCase();
   if (handle && handle !== META.user.handle) patch.handle = handle;
   const before = { ...META.user };
-  Object.assign(META.user, patch); $('#a-handle').textContent = '@' + META.user.handle; toast('Profile saved');
+  Object.assign(META.user, patch); toast('Saved');
   sync('/api/me', { method: 'PUT', body: JSON.stringify(patch) }, () => { META.user = before; $('#p-handle').value = before.handle || ''; loadMeta(); });
 });
 
