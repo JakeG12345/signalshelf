@@ -433,6 +433,8 @@ try {
       const saved = await g('/api/ingest', { method: 'POST', headers: as(u1), body: JSON.stringify({ id: eps[0].id, source: 'apple_podcasts', title: eps[0].title, creator: eps[0].creator, url: eps[0].url, transcript: eps[0].description, transcript_status: 'description' }) });
       assert.equal(saved.status, 200);
       assert.equal((await g('/api/entries', { headers: as(u1) })).body[0].id, 'pod_apple_9001');
+      const later = await g('/api/ingest', { method: 'POST', headers: as(u1), body: JSON.stringify({ id: 'pod_apple_9002', source: 'apple_podcasts', title: 'Later', status: 'to_watch' }) });
+      assert.equal(later.body.entry.status, 'to_watch', 'status from the add box is kept');
     });
     await t('landing features the most must-watch video and podcast, public shelves only', async () => {
       const mk = async (n, handle) => {

@@ -48,7 +48,19 @@
 
   /* Add bar: the one loud control on the page */
   .addbar { margin-bottom:12px; }
-  .addbar input { flex:1; min-width:260px; border-color:var(--ink); padding:12px 14px; }
+  .addbar .addwrap { flex:1; min-width:260px; position:relative; display:flex; }
+  .addbar input { flex:1; min-width:0; border-color:var(--ink); padding:12px 14px; }
+  .addpick { position:absolute; top:calc(100% + 6px); left:0; right:0; z-index:30; background:var(--panel); border:1.5px solid var(--ink); border-radius:6px; max-height:60vh; overflow-y:auto; box-shadow:0 10px 30px rgba(0,0,0,.12); }
+  .addpick .ph { display:flex; align-items:center; gap:8px; padding:10px 12px; font-weight:700; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--panel); }
+  .addpick .ph button, .addbar .addpick .ph button { padding:4px 12px; flex:none; }
+  .addpick .opt { display:grid; grid-template-columns:44px 1fr auto; gap:10px; align-items:center; padding:9px 12px; border-bottom:1px solid var(--line); cursor:pointer; }
+  .addpick .opt:hover, .addpick .opt:focus { background:var(--plate); outline:0; }
+  .addpick .opt.noimg { grid-template-columns:1fr auto; }
+  .addpick img { width:44px; height:44px; border-radius:4px; object-fit:cover; background:var(--line); }
+  .addpick .t { font-weight:650; line-height:1.3; }
+  .addpick .s, .addpick .w { color:var(--mute); font-size:13px; }
+  .addpick .w { white-space:nowrap; }
+  .addpick .msg { padding:12px; color:var(--mute); font-size:14px; }
   .addbar button { padding:12px 18px; }
   .filters { margin-bottom:22px; }
   .filters input { flex:1; min-width:220px; }
@@ -184,7 +196,7 @@
     .container { padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom)); }
     header { margin-bottom:16px; }
     header .row button { padding:7px 11px; font-size:14px; }
-    .addbar input, .filters input { min-width:0; flex-basis:100%; }
+    .addbar .addwrap, .addbar input, .filters input { min-width:0; flex-basis:100%; }
     .addbar select, .addbar button { flex:1; }
     .fsel { display:flex; gap:8px; overflow-x:auto; flex-basis:100%; padding-bottom:2px; scrollbar-width:none; }
     .fsel::-webkit-scrollbar { display:none; }
@@ -217,7 +229,8 @@
   <div class="stats" id="stats">Loading…</div>
 
   <form class="row addbar" id="addform">
-    <input id="addurl" type="url" inputmode="url" placeholder="Paste a YouTube, podcast or any link" autocomplete="off" />
+    <div class="addwrap"><input id="addurl" type="text" placeholder="Paste a YouTube link or search a podcast" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" />
+      <div id="addpick" class="addpick" hidden></div></div>
     <select id="addstatus"><option value="watched">Watched</option><option value="to_watch">To watch</option></select>
     <button type="submit" class="primary">Save to shelf</button>
   </form>
@@ -539,7 +552,7 @@ const hasFilters = () => ['#q', '#f-source', '#f-rating', '#f-model', '#f-status
 function renderList(items, filtered = hasFilters()) {
   ITEMS = new Map(items.map(it => [it.id, it]));
   $('#list').innerHTML = items.length ? items.map(card).join('') :
-    `<div class="empty">${filtered ? 'Nothing matches. Clear the search or filters to see everything.' : '<b>Your shelf is empty.</b>Paste the link to the last video or podcast you watched.'}</div>`;
+    `<div class="empty">${filtered ? 'Nothing matches. Clear the search or filters to see everything.' : '<b>Your shelf is empty.</b>Paste a YouTube link or search a podcast you listened to.'}</div>`;
   if (!filtered) cacheSet('entries', items.slice(0, 200));
 }
 function replaceCard(it) {
@@ -824,9 +837,84 @@ document.addEventListener('keydown', e => {
 });
 window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 
+// The add box: a link saves straight away, anything else searches podcasts.
+const looksLikeLink = v => /^(https?:\/\/|www\.)/i.test(v) || /^[^\s/]+\.[a-z]{2,}(\/\S*)?$/i.test(v);
+const ADD = { seq: 0, timer: null, shows: [], eps: [], show: null };
+function closeAddPick() { $('#addpick').hidden = true; $('#addpick').innerHTML = ''; ADD.show = null; }
+function addPickHtml(html) { $('#addpick').innerHTML = html; $('#addpick').hidden = false; }
+async function addSearch(q) {
+  const seq = ++ADD.seq;
+  addPickHtml('<div class="msg">Searching podcasts…</div>');
+  try {
+    const shows = await podSearch(q);
+    if (seq !== ADD.seq) return;
+    ADD.shows = shows;
+    addPickHtml(shows.map((sh, n) => `<div class="opt${safeUrl(sh.thumbnail) ? '' : ' noimg'}" tabindex="0" data-show="${n}">
+        ${safeUrl(sh.thumbnail) ? `<img src="${esc(sh.thumbnail)}" alt="" loading="lazy">` : ''}
+        <span><span class="t">${esc(sh.title)}</span><br><span class="s">${esc(sh.creator)}</span></span><span class="w">›</span></div>`).join('')
+      || '<div class="msg">No podcasts found. Paste a link to save anything else.</div>');
+  } catch (err) { if (seq === ADD.seq) addPickHtml(`<div class="msg">${esc(err.message)}</div>`); }
+}
+async function addOpenShow(sh) {
+  const seq = ++ADD.seq; ADD.show = sh;
+  addPickHtml(`<div class="ph"><button type="button" class="copy" data-addback>‹</button><span>${esc(sh.title)}</span></div><div class="msg">Loading episodes…</div>`);
+  try {
+    const eps = await podEpisodes(sh.id);
+    if (seq !== ADD.seq) return;
+    ADD.eps = eps;
+    addPickHtml(`<div class="ph"><button type="button" class="copy" data-addback>‹</button><span>${esc(sh.title)}</span></div>` +
+      (eps.map((ep, n) => `<div class="opt noimg" tabindex="0" data-ep="${n}"><span><span class="t">${esc(ep.title)}</span></span>
+        <span class="w">${ep.published_at ? fmtDate(ep.published_at) : ''}</span></div>`).join('') || '<div class="msg">No episodes found.</div>'));
+  } catch (err) { if (seq === ADD.seq) addPickHtml(`<div class="msg">${esc(err.message)}</div>`); }
+}
+$('#addurl').addEventListener('input', () => {
+  clearTimeout(ADD.timer);
+  const v = $('#addurl').value.trim();
+  if (v.length < 3 || looksLikeLink(v)) { ++ADD.seq; return closeAddPick(); }
+  ADD.timer = setTimeout(() => addSearch(v), 300);
+});
+$('#addurl').addEventListener('keydown', e => { if (e.key === 'Escape') closeAddPick(); });
+$('#addpick').addEventListener('click', e => {
+  if (e.target.closest('[data-addback]')) { const v = $('#addurl').value.trim(); return v.length >= 3 ? addSearch(v) : closeAddPick(); }
+  const sh = e.target.closest('[data-show]'); if (sh) return addOpenShow(ADD.shows[+sh.dataset.show]);
+  const ep = e.target.closest('[data-ep]'); if (ep) { const it = ADD.eps[+ep.dataset.ep]; $('#addurl').value = ''; closeAddPick(); return addEpisode(it); }
+});
+$('#addpick').addEventListener('keydown', e => { if (e.key === 'Enter') e.target.closest('.opt')?.click(); });
+document.addEventListener('click', e => { if (!e.target.closest('.addwrap')) closeAddPick(); });
+
+async function savePodcastEpisode(i, status) {
+  return api('/api/ingest', { method: 'POST', body: JSON.stringify({
+    id: i.id, source: 'apple_podcasts', title: i.title, creator: i.creator, url: i.url, duration_sec: i.duration_sec,
+    watched_at: i.watched_at, published_at: i.published_at, thumbnail: i.thumbnail, transcript: i.description,
+    transcript_status: i.description ? 'description' : 'missing', status,
+    feed_url: i.feed_url, episode_guid: i.episode_guid, enclosure_url: i.enclosure_url }) });
+}
+async function addEpisode(it) {
+  const tmp = `pending_${Date.now()}`;
+  document.querySelector('#list .empty')?.remove();
+  $('#list').insertAdjacentHTML('afterbegin', card({ id: tmp, title: it.title, creator: it.creator, source: 'apple_podcasts', thumbnail: it.thumbnail,
+    monetization_models: [], key_takeaways: [], signal_rating: null, watched_at: new Date().toISOString(), _pending: true }));
+  try {
+    const r = await savePodcastEpisode(it, $('#addstatus').value);
+    document.querySelector(`.card[data-id="${tmp}"]`)?.remove();
+    document.querySelector(`.card[data-id="${CSS.escape(r.entry.id)}"]`)?.remove();
+    ITEMS.set(r.entry.id, r.entry);
+    $('#list').insertAdjacentHTML('afterbegin', card(r.entry));
+    if (!hasFilters()) cacheSet('entries', [r.entry, ...[...ITEMS.values()].filter(i => i.id !== r.entry.id)].slice(0, 200));
+    toast(r.entry.transcript_status === 'ok' ? 'Saved, with transcript' : r.entry.transcript_status === 'pending' ? 'Saved. Transcribing now.' : 'Saved');
+    refreshMetaSoon();
+    if (r.entry.transcript_status === 'pending') { clearTimeout(pendingTimer); pendingTimer = setTimeout(loadEntries, 30000); }
+  } catch (err) {
+    document.querySelector(`.card[data-id="${tmp}"]`)?.remove();
+    toast(err.message, true);
+  }
+}
+
 $('#addform').addEventListener('submit', async e => {
   e.preventDefault();
   const url = $('#addurl').value.trim(); if (!url) return;
+  if (!looksLikeLink(url)) { clearTimeout(ADD.timer); if (url.length >= 2) addSearch(url); return; }
+  closeAddPick();
   $('#addurl').value = ''; // ready for the next link straight away
   const tmp = `pending_${Date.now()}`;
   let host = url; try { host = new URL(/^https?:/i.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, ''); } catch {}
@@ -1193,11 +1281,7 @@ $('#i-save').addEventListener('click', async () => {
   const saveOne = async i => {
     try {
       if (i.kind === 'podcast') {
-        await api('/api/ingest', { method: 'POST', body: JSON.stringify({
-          id: i.id, source: 'apple_podcasts', title: i.title, creator: i.creator, url: i.url, duration_sec: i.duration_sec,
-          watched_at: i.watched_at, published_at: i.published_at, thumbnail: i.thumbnail, transcript: i.description,
-          transcript_status: i.description ? 'description' : 'missing',
-          feed_url: i.feed_url, episode_guid: i.episode_guid, enclosure_url: i.enclosure_url }) });
+        await savePodcastEpisode(i);
       } else {
         await api('/api/ingest-url', { method: 'POST', body: JSON.stringify({ url: i.url, watched_at: i.watched_at }) });
       }

@@ -160,6 +160,7 @@ async function privateApi(request, url, ctx) {
       thumbnail: b.thumbnail || null, transcript_status: b.transcript_status || null, tags: b.tags || null,
       watched_at: validDate(b.watched_at)
     }));
+    if (STATUSES.includes(b.status) && b.status !== entry.status) entry.status = (await store.update(entry.id, { status: b.status })).status;
     // No published transcript: transcribe the audio in the background (Deepgram calls back when done)
     if (podcast && entry.transcript_status !== 'ok' && b.enclosure_url && deepgramEnabled(env)) {
       try {
