@@ -55,3 +55,4 @@ Hi-fi faceplate look: plate `#E6E8E2`, panel `#F4F5F0`, ink `#15171A`, mute `#5F
 3. Share image (OG card) for profiles, for posting on X.
 4. Password reset by email (needs an email provider such as Resend + a domain).
 5. Buy `signalshelf.app` (unregistered as of 24 Nov 2026) and point it at the Worker.
+6. Native iPhone wrapper (e.g. Capacitor) around the web app with a Share Extension. Skipped for launch; revisit if it gets traction.
