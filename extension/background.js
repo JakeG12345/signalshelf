@@ -2,7 +2,7 @@ import { resolveEpisode, podcastLink } from './podcast.js';
 
 // Service worker: talks to the local server (avoids page CORS / Private Network Access issues)
 // and orchestrates capture for both the popup and auto-capture.
-const DEFAULT_API = 'http://127.0.0.1:3456';
+const DEFAULT_API = 'https://signalshelf.jake-1c4.workers.dev';
 
 async function server() {
   const { apiBase = DEFAULT_API, apiToken = '' } = await chrome.storage.sync.get(['apiBase', 'apiToken']);
@@ -111,11 +111,12 @@ async function readYouTubeHistory() {
   }
 }
 
-// New installs: auto-capture on (2 min of playback). Respect a choice already synced from another device.
+// New installs: auto-capture stays off until the user turns it on in the popup (Chrome Web Store consent rules).
+// Respect a choice already synced from another device.
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason !== 'install') return;
   const { autoCapture } = await chrome.storage.sync.get('autoCapture');
-  if (autoCapture === undefined) await chrome.storage.sync.set({ autoCapture: true, thresholdMin: 2 });
+  if (autoCapture === undefined) await chrome.storage.sync.set({ autoCapture: false, thresholdMin: 2 });
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -129,6 +130,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return r;
     },
     KT_HISTORY: () => readYouTubeHistory(),
+    // From connect.js on Signal Shelf's own pages: store the shelf key, then close the tab the popup opened
+    KT_CONNECT: async () => {
+      const origin = new URL(sender.url || sender.tab?.url || '').origin;
+      if (origin !== msg.base || !/^ss_[A-Za-z0-9]{24,64}$/.test(msg.key || '')) throw new Error('Not allowed');
+      await chrome.storage.sync.set({ apiBase: msg.base, apiToken: msg.key });
+      const { connectTab } = await chrome.storage.session.get('connectTab');
+      if (connectTab && connectTab === sender.tab?.id) setTimeout(() => chrome.tabs.remove(connectTab).catch(() => {}), 1500);
+      return true;
+    },
+    KT_OPEN_CONNECT: async () => {
+      const { base } = await server();
+      const t = await chrome.tabs.create({ url: `${base}/app/#connect-extension` });
+      await chrome.storage.session.set({ connectTab: t.id });
+      return true;
+    },
     KT_EXISTS: () => api('/api/entries/exists', { method: 'POST', body: JSON.stringify({ ids: msg.ids }) }),
     KT_OPEN_PICKER: () => chrome.tabs.create({ url: chrome.runtime.getURL('picker.html') }).then(() => true),
     KT_HEALTH: async () => ({ ...(await api('/api/health', { timeout: 4000 })), base: (await server()).base }),

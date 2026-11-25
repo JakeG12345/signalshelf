@@ -423,7 +423,8 @@
     <details class="cgroup">
       <summary>Chrome</summary>
       <div class="crow">
-        <div><b>Chrome extension</b><span>Paste the key in the extension's settings.</span></div>
+        <div><b>Chrome extension</b><span id="c-ext-text">Saves videos and podcast episodes as you watch.</span></div>
+        <button class="primary" type="button" id="c-ext-connect" hidden>Connect</button>
         <button class="copy" type="button" id="c-key-copy">Copy key</button>
       </div>
     </details>
@@ -1128,11 +1129,26 @@ function openSettings() {
   $('#c-shortcut-copy').dataset.copytext = META.shortcutUrl || '';
   $('#c-mcp-copy').dataset.copytext = META.mcpUrl || '';
   $('#c-key-copy').dataset.copytext = getToken() || '';
+  const ext = document.documentElement.dataset.ssExtension === '1';
+  $('#c-ext-connect').hidden = !ext;
+  $('#c-ext-text').textContent = ext ? 'Installed. Connect it to this shelf.' : 'Saves videos and podcast episodes as you watch. Paste the key in its Server settings.';
   $('#c-shortcut-install').hidden = !META.shortcutInstallUrl;
   $('#sc-manual').hidden = !!META.shortcutInstallUrl;
   $('#settings').classList.add('open'); document.body.style.overflow = 'hidden';
 }
 $('#btn-settings').addEventListener('click', openSettings);
+
+// Chrome extension: hand it this shelf's key through its helper script on this page (no copy and paste)
+function connectExtension() {
+  if (document.documentElement.dataset.ssExtension !== '1') return toast('Install the Signal Shelf extension first.', true);
+  window.postMessage({ type: 'signalshelf:connect', key: getToken() }, location.origin);
+}
+window.addEventListener('message', ev => {
+  if (ev.source !== window || ev.data?.type !== 'signalshelf:connected') return;
+  if (ev.data.ok) toast('Chrome extension connected. Save a video or episode from its button.');
+  else toast(ev.data.error || 'Could not connect the extension.', true);
+});
+$('#c-ext-connect').addEventListener('click', connectExtension);
 $('#c-shortcut-install').addEventListener('click', () => { if (META.shortcutInstallUrl) location.href = META.shortcutInstallUrl; });
 
 $('#signupform').addEventListener('submit', async e => {
@@ -1536,12 +1552,13 @@ async function followFromLink(handle) {
 // Deep links: #k=<key> (private link), #add=<url> (iPhone share shortcut), #open=<id> (extension)
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
-  return { k: p.get('k'), add: p.get('add'), open: p.get('open'), login: p.has('login') ? '1' : null,
+  return { connectExt: p.has('connect-extension'), k: p.get('k'), add: p.get('add'), open: p.get('open'), login: p.has('login') ? '1' : null,
     follow: p.get('follow'), account: p.has('account') ? '1' : null, error: p.get('error'), google: p.get('google'), imp: p.has('import') ? (p.get('import') || '1') : null };
 }
 
 async function handleHash() {
-  const { k, add, open, login, follow, account, error, google, imp } = readHash();
+  const { k, add, open, login, follow, account, error, google, imp, connectExt } = readHash();
+  if (connectExt) { history.replaceState(null, '', location.pathname); return connectExtension(); }
   if (imp) {
     history.replaceState(null, '', location.pathname);
     if (imp === 'likes') return openLikes();

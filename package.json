@@ -9,7 +9,8 @@
     "setup": "node scripts/setup.js",
     "doctor": "node scripts/setup.js --doctor",
     "shelf": "node server/shelf.js",
-    "test": "node scripts/smoke-test.js"
+    "test": "node scripts/smoke-test.js",
+    "pack:extension": "bash scripts/pack-extension.sh"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",

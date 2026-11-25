@@ -184,7 +184,7 @@
   });
 
   // ---------- Auto-capture ----------
-  const settings = { autoCapture: true, thresholdMin: 2, apiBase: '', apiToken: '' };
+  const settings = { autoCapture: false, thresholdMin: 2, apiBase: '', apiToken: '' };
   chrome.storage.sync.get(settings, s => Object.assign(settings, s));
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'sync') return;

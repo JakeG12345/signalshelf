@@ -11,3 +11,4 @@ public-shelf/
 worker/node_modules/
 worker/.wrangler/
 worker/.dev.vars
+dist/

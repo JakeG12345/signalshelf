@@ -57,6 +57,11 @@
   </div>
   <div class="card muted" id="no-video" hidden>Open a YouTube video or a podcast episode (Apple Podcasts or Spotify) to save it, or paste a link below.</div>
 
+  <div class="card" id="connect" hidden>
+    <div style="font-weight:600;margin-bottom:4px">Connect to your shelf</div>
+    <div class="muted" style="margin-bottom:8px">Opens Signal Shelf and links this browser. No account needed.</div>
+    <button id="connect-btn" style="width:100%">Connect</button>
+  </div>
   <div id="msg"></div>
 
   <button class="sec" id="pick" style="width:100%;margin-bottom:10px">Pick from YouTube history</button>
@@ -64,7 +69,7 @@
   <div class="card">
     <div class="h">Add by link</div>
     <form class="row" id="linkform">
-      <input type="text" id="link" placeholder="youtube.com/watch?v=… or youtu.be/…" />
+      <input type="text" id="link" placeholder="YouTube, Spotify or Apple Podcasts link" />
       <button class="sec" type="submit" id="linkbtn">Add</button>
     </form>
   </div>
@@ -73,9 +78,9 @@
     <div class="toggle">
       <div>
         <div style="font-weight:600">Auto-capture</div>
-        <div class="muted">Save videos after <select id="threshold">
+        <div class="muted">Save YouTube videos you watch for <select id="threshold">
           <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="5">5</option><option value="10">10</option>
-        </select> min of playback</div>
+        </select> min. Off until you turn it on.</div>
       </div>
       <label class="switch"><input type="checkbox" id="auto"><span class="slider"></span></label>
     </div>
@@ -83,7 +88,7 @@
 
   <details class="card" id="srv-settings">
     <summary style="cursor:pointer;font-weight:600">Server settings</summary>
-    <div class="muted" style="margin:6px 0">Paste the URL and key from the app's <b>Account</b> panel. (Mac-only version: http://127.0.0.1:3456, no key.)</div>
+    <div class="muted" style="margin:6px 0">Only needed for a different server. Key: in the app, Settings, Chrome. (Mac-only version: http://127.0.0.1:3456, no key.)</div>
     <input type="text" id="api-base" placeholder="https://signalshelf.jake-1c4.workers.dev" style="width:100%;margin-bottom:6px" />
     <input type="password" id="api-token" placeholder="Your key (ss_…)" style="width:100%;margin-bottom:6px;flex:none" />
     <button class="sec" id="api-save" style="width:100%">Save &amp; test</button>

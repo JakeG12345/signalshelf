@@ -32,7 +32,7 @@ async function rate(n) {
   else setMsg(r.error, 'err');
 }
 
-let appUrl = 'http://127.0.0.1:3456/';
+let appUrl = 'https://signalshelf.jake-1c4.workers.dev/app/';
 
 function showEntry(entry) {
   entryId = entry.id;
@@ -45,7 +45,7 @@ function showEntry(entry) {
 }
 
 async function init() {
-  const s = await chrome.storage.sync.get({ autoCapture: true, thresholdMin: 2, apiBase: 'http://127.0.0.1:3456', apiToken: '' });
+  const s = await chrome.storage.sync.get({ autoCapture: false, thresholdMin: 2, apiBase: 'https://signalshelf.jake-1c4.workers.dev', apiToken: '' });
   $('#auto').checked = !!s.autoCapture;
   $('#threshold').value = String(s.thresholdMin);
   $('#api-base').value = s.apiBase;
@@ -78,9 +78,9 @@ async function init() {
   }
   $('#srv').textContent = !h.ok ? 'offline' : !ready ? 'key needed' : `${h.data.mode || 'local'} · ${h.data.entries} items`;
   if (!ready) {
-    setMsg(h.ok ? 'Copy your key from the app (Settings, Chrome) into Server settings.' : h.error, 'err');
+    $('#connect').hidden = false;
     $('#save').disabled = true;
-    $('#srv-settings').open = true;
+    if (!h.ok) setMsg(h.error, 'err');
     return;
   }
 
@@ -156,10 +156,11 @@ $('#api-save').addEventListener('click', async () => {
   if (base && !/^https?:\/\//.test(base)) base = 'https://' + base;
   const rawKey = $('#api-token').value.trim();
   const key = (rawKey.match(/ss_[A-Za-z0-9]{24,64}/) || [rawKey])[0]; // accepts a pasted private link too
-  await chrome.storage.sync.set({ apiBase: base || 'http://127.0.0.1:3456', apiToken: key });
+  await chrome.storage.sync.set({ apiBase: base || 'https://signalshelf.jake-1c4.workers.dev', apiToken: key });
   location.reload();
 });
 
+$('#connect-btn').addEventListener('click', () => { send({ type: 'KT_OPEN_CONNECT' }); window.close(); });
 $('#pick').addEventListener('click', () => { send({ type: 'KT_OPEN_PICKER' }); window.close(); });
 
 init();

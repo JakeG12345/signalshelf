@@ -237,6 +237,8 @@ export function renderPrivacy(origin) {
 <p>If you import liked videos, Google asks you to let Signal Shelf view your YouTube account. We read your list of liked videos once so you can pick from it. We do not keep access to your account, and the list is deleted as soon as it is shown to you. Only the videos you pick are saved.</p>
 <p>This feature uses YouTube API Services. By using it you agree to the <a href="https://www.youtube.com/t/terms">YouTube Terms of Service</a>, and the <a href="https://policies.google.com/privacy">Google Privacy Policy</a> applies. You can remove access any time in your <a href="https://myaccount.google.com/permissions">Google security settings</a>.</p>
 <p>Signal Shelf's use of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
+<h2>Chrome extension</h2>
+<p>The extension reads the YouTube video or podcast episode page you are on (title, channel or show, captions) only when you press Save, or, if you turn on auto-capture, when you have watched a YouTube video for the minutes you chose. It sends what it reads only to your own shelf. It stores your shelf key and settings in Chrome's sync storage. It looks up podcast episodes in Apple's public podcast directory. It does not read other sites, and nothing is sold or shared.</p>
 <h2>Who else handles data</h2>
 <ul>
 <li>Cloudflare hosts the site and database.</li>
