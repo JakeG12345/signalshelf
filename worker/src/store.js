@@ -74,6 +74,10 @@ export const CLOUD_SCHEMA_SQL = [
     count INTEGER NOT NULL,
     reset_at INTEGER NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS schema_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT
+  )`,
   `CREATE TABLE IF NOT EXISTS stt_jobs (
     user_id TEXT NOT NULL,
     entry_id TEXT NOT NULL,
@@ -96,10 +100,53 @@ export const CLOUD_SCHEMA_SQL = [
   )`
 ];
 
+// The schema changes on every fresh Worker start used to run all of this DDL, which made requests fail whenever
+// D1 hiccuped. Now it runs once per schema version: a normal start does one small read of schema_meta.
+// Bump MIGRATIONS when you add a migration below; changes to CLOUD_SCHEMA_SQL bump the tag automatically.
+const MIGRATIONS = 4;
+const SCHEMA_TAG = (() => {
+  let h = 5381;
+  for (const ch of JSON.stringify(CLOUD_SCHEMA_SQL) + MIGRATIONS) h = ((h * 33) ^ ch.charCodeAt(0)) >>> 0;
+  return `v${MIGRATIONS}-${h.toString(36)}`;
+})();
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+/** Retries brief D1 failures (lost connection, overloaded, reset) a couple of times before giving up. */
+export async function withRetry(fn, tries = 3) {
+  for (let i = 1; ; i++) {
+    try { return await fn(); }
+    catch (err) {
+      if (i >= tries || /no such|syntax|constraint|UNIQUE|SQLITE_ERROR/i.test(err?.message || '')) throw err;
+      console.error(`D1 attempt ${i} failed, retrying:`, err?.message);
+      await sleep(100 * i * i);
+    }
+  }
+}
+
+async function schemaCurrent(db) {
+  try {
+    const row = await db.prepare("SELECT value FROM schema_meta WHERE key = 'schema'").first();
+    return row?.value === SCHEMA_TAG;
+  } catch (err) {
+    if (/no such table/i.test(err?.message || '')) return false; // first run on this database
+    throw err;
+  }
+}
+
 let schemaReady = null;
 export function ensureSchema(db) {
   if (!schemaReady) {
-    schemaReady = (async () => {
+    schemaReady = withRetry(async () => {
+      if (await schemaCurrent(db)) return;
+      await migrate(db);
+      await db.prepare("INSERT INTO schema_meta (key, value) VALUES ('schema', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(SCHEMA_TAG).run();
+    }).catch(err => { schemaReady = null; throw err; });
+  }
+  return schemaReady;
+}
+
+async function migrate(db) {
+  {
       // v2 (single-user) databases had `entries` without user_id: park them and start the multi-user schema.
       const cols = (await db.prepare('PRAGMA table_info(entries)').all()).results || [];
       if (cols.length && !cols.some(c => c.name === 'user_id')) {
@@ -129,9 +176,7 @@ export function ensureSchema(db) {
         ]);
       }
       await db.prepare('DROP TABLE IF EXISTS transcript_jobs').run(); // replaced by stt_jobs
-    })().catch(err => { schemaReady = null; throw err; });
   }
-  return schemaReady;
 }
 
 const bindAll = (db, stmts) => stmts.map(s => db.prepare(s.sql).bind(...s.params));

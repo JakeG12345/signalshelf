@@ -326,7 +326,17 @@ async function privateApi(request, url, ctx) {
 }
 
 export default {
-  async fetch(request, env) {
+  // Reads that fail unexpectedly (a brief D1 problem) get one more try before the user sees an error.
+  async fetch(request, env, ctx) {
+    const res = await handle(request, env);
+    if (res.status !== 500 || !['GET', 'HEAD'].includes(request.method)) return res;
+    await new Promise(r => setTimeout(r, 150));
+    return handle(request, env);
+  }
+};
+
+async function handle(request, env) {
+  {
     const url = new URL(request.url);
     const path = url.pathname;
     const db = env.DB;
@@ -341,6 +351,13 @@ export default {
         const out = new Response(res.body, res);
         out.headers.set('Cache-Control', asset === '/index.html' ? 'no-cache' : 'public, max-age=3600');
         return out;
+      }
+
+      // Static pages that don't need the database (the landing page only needs it when sharing is on)
+      if (path === '/terms' || path === '/terms/') return html(renderTerms(url.origin), 200, { 'Cache-Control': 'public, max-age=3600' });
+      if (path === '/privacy' || path === '/privacy/') return html(renderPrivacy(url.origin), 200, { 'Cache-Control': 'public, max-age=3600' });
+      if ((path === '/' || path === '') && !socialOn(env)) {
+        return html(renderLanding({ origin: url.origin, social: false, extensionUrl: extensionUrl(env) }), 200, { 'Cache-Control': 'public, max-age=60' });
       }
 
       await ensureSchema(db);
@@ -436,4 +453,4 @@ export default {
       return json({ error: status >= 500 && !err.expose ? 'Something went wrong. Please try again.' : err.message }, status);
     }
   }
-};
+}

@@ -234,7 +234,7 @@
       <button id="btn-connect" hidden>Account</button>
       <button id="btn-settings" hidden>Settings</button>
       <a id="btn-people" class="hbtn" href="/people" hidden>People</a>
-      <button id="btn-shelf">Public Shelf</button>
+      <button id="btn-shelf" hidden>Public Shelf</button>
     </div>
   </header>
   <div class="stats" id="stats">Loading…</div>
@@ -593,7 +593,7 @@ function replaceCard(it) {
 /** Sends a change in the background; on failure, undo() restores the screen and the error is shown. */
 function sync(path, opts, undo, onOk) {
   return api(path, opts).then(r => { refreshMetaSoon(); onOk?.(r); return r; })
-    .catch(err => { undo?.(); toast(`${err.message}. Change undone.`, true); });
+    .catch(err => { undo?.(); toast(`${String(err.message).replace(/[.\s]+$/, '')}. Change undone.`, true); });
 }
 
 function applyMeta(meta) {
@@ -640,7 +640,12 @@ async function loadEntries() {
   for (const [k, sel] of Object.entries(map)) { const v = $(sel).value.trim(); if (v) p.set(k, v); }
   let items;
   try { items = await api('/api/entries?' + p); }
-  catch (e) { $('#list').innerHTML = `<div class="empty">Could not load entries: ${esc(e.message)}</div>`; return; }
+  catch (e) {
+    // Keep what's on screen (the cached shelf) and just say the refresh failed
+    if (document.querySelector('#list .card')) toast('Could not refresh your shelf. Showing the last copy.', true);
+    else $('#list').innerHTML = `<div class="empty">Could not load your shelf. Check your connection and reload.</div>`;
+    return;
+  }
   if (seq !== loadSeq) return; // a newer search already started
   renderList(items, !!p.toString());
   items.filter(i => i.transcript_status === 'pending').forEach(i => transcribe(i.id)); // resume any left behind
@@ -739,7 +744,12 @@ async function openItem(id) {
   if (cached) fillModal({ ...cached, transcript: null, personal_notes: null, claude_notes: null, description: null }); // instant
   let e;
   try { e = await api('/api/entries/' + encodeURIComponent(id)); }
-  catch (err) { if (!cached) toast(err.message, true); else $('#m-tsummary').textContent = 'Transcript (could not load)'; return; }
+  catch (err) {
+    if (!cached) return toast(err.message, true);
+    $('#m-tsummary').textContent = 'Transcript (could not load)';
+    for (const s of ['#m-notes', '#m-cnotes']) $(s).placeholder = 'Could not load. Close and open it again.';
+    return;
+  }
   if (current && current.id !== id) return; // user moved on
   if (cached && dirty) { // keep what they've typed; just fill the slow fields
     current = { ...e };
@@ -1624,7 +1634,7 @@ async function start() {
   }
   if (WELCOME && META.mode === 'cloud') toast('Your shelf is ready. Paste a link or search for a podcast to add your first one.');
 }
-start().catch(e => toast('Server unreachable: ' + e.message, true));
+start().catch(e => toast(document.querySelector('#list .card') ? 'Could not reach Signal Shelf. Showing the last copy.' : 'Could not reach Signal Shelf. Check your connection and reload.', true));
 </script>
 </body>
 </html>
