@@ -26,11 +26,11 @@ Owner: Ryan (GitHub JakeG12345). Built as day 1 of a "launch a product every day
 
 ```bash
 npm ci && npm test                         # 33 checks: shared logic, importers, local server, stdio MCP
-cd worker && npm ci && npm test            # 31 checks: multi-user Worker under wrangler dev + remote MCP + Google sign-in, YouTube likes and podcast search (local mock)
+cd worker && npm ci && npm test            # 32 checks: multi-user Worker under wrangler dev + remote MCP + Google sign-in, YouTube likes and podcast search (local mock)
 cd worker && npm run dev                   # local cloud dev server
 ```
 
-Both suites must pass before pushing. CI (`.github/workflows/deploy.yml`) runs them on every push and deploys `main` to Cloudflare. Secrets live in the GitHub `production` environment: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `SUPADATA_API_KEY`, `GOOGLE_CLIENT_SECRET`. The workflow creates/finds the D1 database `signalshelf` and patches its id into `wrangler.toml`.
+Both suites must pass before pushing. CI (`.github/workflows/deploy.yml`) runs them on every push and deploys `main` to Cloudflare. Secrets live in the GitHub `production` environment: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `SUPADATA_API_KEY`, `GOOGLE_CLIENT_SECRET`, `DEEPGRAM_API_KEY`. The workflow creates/finds the D1 database `signalshelf` and patches its id into `wrangler.toml`.
 
 Check a deploy: `curl -s https://api.github.com/repos/JakeG12345/signalshelf/actions/runs?per_page=1`.
 
@@ -40,7 +40,7 @@ Check a deploy: `curl -s https://api.github.com/repos/JakeG12345/signalshelf/act
 - **Every query is user-scoped** in the Worker (`createStore(db, userId)`, `buildEntriesQuery({ userId })`). Entry ids (`yt_<id>`, `pod_<uuid>`, `web_<hash>`) are only unique per user.
 - **Re-captures never overwrite** a user's rating, tags, takeaways or notes, or a transcript with an empty one (`buildUpsert`).
 - **Instant UI:** the app updates the screen first and syncs in the background with rollback (`sync()`, `replaceCard()`, cached first paint). Keep new interactions optimistic.
-- **Transcripts:** YouTube blocks cloud IPs, so the Worker uses Supadata (`mode=native`, 1 credit per new video; skipped when a transcript already exists). Free plan = 100/month; transcripts are free for users for now. When credits run out, saves continue without a transcript. Podcasts: the app sends `feed_url`, `episode_guid`, `enclosure_url` with each save and the Worker fetches the show's published transcript; shows that don't publish one keep the description (`transcript_status = 'description'`). Re-saving an episode upgrades it.
+- **Transcripts:** YouTube blocks cloud IPs, so the Worker uses Supadata (`mode=native`, 1 credit per new video; skipped when a transcript already exists). Free plan = 100/month; transcripts are free for users for now. When credits run out, saves continue without a transcript. Podcasts: the app sends `feed_url`, `episode_guid`, `enclosure_url` with each save and the Worker fetches the show's published transcript; Order on every podcast save: (1) shared cache `podcast_transcripts` keyed by `pod_apple_<trackId>` and `audio:<enclosure without query>`, (2) the show's published transcript, (3) Deepgram speech-to-text on the audio (`nova-3`, async: `transcript_status = 'pending'`, Deepgram POSTs to `/hooks/deepgram/<token>`, single-use `transcript_jobs`; 30/user/day). Only feed and Deepgram text go in the cache, never user-pasted text. Without `DEEPGRAM_API_KEY` step 3 is skipped and the description stays.
 - **No history APIs exist:** YouTube removed watch history from its API in 2016; Apple Podcasts has no API. History import = Chrome extension (live), Google Takeout file, or the Mac Podcasts library file. Easier stand-ins: YouTube liked videos (`youtube.readonly`, token never stored, list parked once in `user_settings`) and podcast show search with episode ticking.
 - **Accounts:** guests get a key instantly (no sign-up); sign-up adds username + password (PBKDF2, 25k iterations for Workers CPU limits) or "Continue with Google" (OAuth code flow, `users.google_sub`, `oauth_states`; auto username; guest shelf is upgraded in place) and makes a public profile (private toggle available). Keys are stored hashed; the private link `/app/#k=<key>` signs a device in.
 - **Rate limits** live in D1 (`rateLimit`): guest creation per IP, saves per day, writes per hour, logins, items per user (5000).

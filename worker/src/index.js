@@ -11,7 +11,7 @@ import { renderLanding, renderNotFound, renderPrivacy, renderTerms } from './lan
 import { renderProfileHtml, renderPeopleHtml, publicItem } from '../../shared/profile-render.js';
 import { createAnonymousUser, resolveUser, updateProfile, listPeople, topSignal, userByHandle, followCounts, setFollow, isFollowing, listFollowing, feed, featured, rateLimit, looksLikeKey, createAccount, changePassword, login, logout, googleEnabled, googleStart, googleCallback } from './accounts.js';
 import { YT_STATE_PREFIX, youtubeLikesStart, youtubeLikesCallback, takeYoutubeLikes, searchPodcasts, podcastEpisodes } from './imports.js';
-import { podcastTranscript } from './podcast-transcripts.js';
+import { podcastTranscript, startTranscription, finishTranscription, deepgramEnabled, episodeKeys, cachedTranscript, cacheTranscript } from './podcast-transcripts.js';
 import { captureLink } from '../../shared/capture.js';
 import { supadataProvider } from './transcripts.js';
 import { APP_VERSION, MONETIZATION_MODELS, SOURCES, STATUSES, HttpError } from '../../shared/core.js';
@@ -30,7 +30,8 @@ function limitsFrom(env) {
     anonPerIpPerDay: n(env.LIMIT_ANON_PER_IP_DAY, 30),
     capturesPerUserPerDay: n(env.LIMIT_CAPTURES_PER_USER_DAY, 300),
     writesPerUserPerHour: n(env.LIMIT_WRITES_PER_USER_HOUR, 2000),
-    itemsPerUser: n(env.LIMIT_ITEMS_PER_USER, 5000)
+    itemsPerUser: n(env.LIMIT_ITEMS_PER_USER, 5000),
+    transcriptionsPerUserPerDay: n(env.LIMIT_TRANSCRIPTIONS_PER_USER_DAY, 30)
   };
 }
 
@@ -44,7 +45,7 @@ const slim = e => {
   const { transcript, user_id, ...rest } = e;
   return { ...rest, transcript_chars: (transcript || '').length };
 };
-const savedMessage = e => `Saved "${e.title}" (${e.transcript_chars ? `${e.transcript_chars.toLocaleString('en-AU')} chars` : e.transcript_status === 'description' ? 'description only' : 'no transcript'})`;
+const savedMessage = e => `Saved "${e.title}" (${e.transcript_status === 'pending' ? 'transcribing' : e.transcript_status === 'description' ? 'description only' : e.transcript_chars ? `${e.transcript_chars.toLocaleString('en-AU')} chars` : 'no transcript'})`;
 
 const validDate = v => {
   if (!v) return null;
@@ -142,8 +143,15 @@ async function privateApi(request, url, ctx) {
     const existing = await store.get(String(b.id || ''));
     if (!existing) await guardCapture();
     // Podcasts: swap the description for the show's published transcript when there is one
-    if (b.source === 'apple_podcasts' && b.feed_url && existing?.transcript_status !== 'ok') {
-      const text = await podcastTranscript({ feedUrl: b.feed_url, guid: b.episode_guid, enclosure: b.enclosure_url, title: b.title });
+    const podcast = b.source === 'apple_podcasts' && !['ok', 'pending'].includes(existing?.transcript_status);
+    const cacheKeys = podcast ? episodeKeys({ id: b.id, enclosure: b.enclosure_url }) : [];
+    if (podcast) {
+      // 1. Already have it (someone saved this episode before)  2. The show's own published transcript
+      let text = await cachedTranscript(db, cacheKeys);
+      if (!text && b.feed_url) {
+        text = await podcastTranscript({ feedUrl: b.feed_url, guid: b.episode_guid, enclosure: b.enclosure_url, title: b.title });
+        if (text) await cacheTranscript(db, cacheKeys, text, 'feed');
+      }
       if (text) { b.transcript = text; b.transcript_status = 'ok'; }
     }
     const entry = slim(await store.upsert({
@@ -152,6 +160,14 @@ async function privateApi(request, url, ctx) {
       thumbnail: b.thumbnail || null, transcript_status: b.transcript_status || null, tags: b.tags || null,
       watched_at: validDate(b.watched_at)
     }));
+    // No published transcript: transcribe the audio in the background (Deepgram calls back when done)
+    if (podcast && entry.transcript_status !== 'ok' && b.enclosure_url && deepgramEnabled(env)) {
+      try {
+        await rateLimit(db, `stt:${user.id}`, limits.transcriptionsPerUserPerDay, 86400, 'Daily transcription limit reached.');
+        // 3. Transcribe the audio
+        if (await startTranscription(env, db, { userId: user.id, entryId: entry.id, audioUrl: b.enclosure_url, origin: url.origin, cacheKeys })) entry.transcript_status = 'pending';
+      } catch (err) { if (err.status !== 429) console.error(err); }
+    }
     return json({ ok: true, entry, message: savedMessage(entry) });
   }
 
@@ -355,6 +371,18 @@ export default {
           const msg = err.status && err.status < 500 ? err.message : 'Google sign-in failed. Try again.';
           return Response.redirect(`${url.origin}/app/#account&error=${encodeURIComponent(msg)}`, 302);
         }
+      }
+      if (path.startsWith('/hooks/deepgram/') && request.method === 'POST') {
+        const data = await request.json().catch(() => null);
+        const done = await finishTranscription(db, path.slice('/hooks/deepgram/'.length), data);
+        if (!done) return json({ ok: false }, 404);
+        const store = createStore(db, done.userId);
+        if (done.text.length > 50) {
+          await cacheTranscript(db, done.cacheKeys, done.text, 'deepgram');
+          await store.update(done.entryId, { transcript: done.text }).catch(() => {});
+        }
+        else await db.prepare("UPDATE entries SET transcript_status = CASE WHEN length(COALESCE(transcript, '')) > 0 THEN 'description' ELSE 'missing' END WHERE user_id = ? AND id = ? AND transcript_status = 'pending'").bind(done.userId, done.entryId).run();
+        return json({ ok: true });
       }
       if (path === '/api/auth/anon' && request.method === 'POST') {
         return json(await createAnonymousUser(db, request, limits), 201);

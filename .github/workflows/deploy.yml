@@ -82,7 +82,13 @@ jobs:
         env:
           SUPADATA_API_KEY: ${{ secrets.SUPADATA_API_KEY }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
         run: |
+          if [ -n "$DEEPGRAM_API_KEY" ]; then
+            printf '%s' "$DEEPGRAM_API_KEY" | npx wrangler secret put DEEPGRAM_API_KEY
+          else
+            echo "::warning::DEEPGRAM_API_KEY not set: podcasts without a published transcript keep their description."
+          fi
           if [ -n "$GOOGLE_CLIENT_SECRET" ]; then
             printf '%s' "$GOOGLE_CLIENT_SECRET" | npx wrangler secret put GOOGLE_CLIENT_SECRET
           else

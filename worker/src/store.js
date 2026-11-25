@@ -72,6 +72,19 @@ export const CLOUD_SCHEMA_SQL = [
     count INTEGER NOT NULL,
     reset_at INTEGER NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS transcript_jobs (
+    token TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    entry_id TEXT NOT NULL,
+    cache_keys TEXT,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS podcast_transcripts (
+    key TEXT PRIMARY KEY,
+    text TEXT NOT NULL,
+    source TEXT,
+    created_at INTEGER NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS oauth_states (
     state TEXT PRIMARY KEY,
     user_id TEXT,

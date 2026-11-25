@@ -146,3 +146,64 @@ export async function podcastTranscript({ feedUrl, guid, enclosure, title }, fet
   }
   return '';
 }
+
+// ---------- Speech-to-text fallback (Deepgram), for shows that don't publish a transcript ----------
+// The save returns at once; Deepgram transcribes the episode audio and calls /hooks/deepgram/<token> when done.
+const JOB_TTL_SEC = 86400;
+
+export const deepgramEnabled = env => !!env.DEEPGRAM_API_KEY;
+
+// ---------- Shared cache: one transcript per episode, reused across users ----------
+// Only transcripts we fetched (show feed) or generated (Deepgram) go in here, never text a user typed or pasted.
+export function episodeKeys({ id, enclosure }) {
+  const keys = [];
+  if (/^pod_apple_\d+$/.test(String(id || ''))) keys.push(String(id));
+  if (isHttp(enclosure)) keys.push('audio:' + stripQuery(enclosure));
+  return keys;
+}
+export async function cachedTranscript(db, keys) {
+  if (!keys.length) return '';
+  const row = await db.prepare(`SELECT text FROM podcast_transcripts WHERE key IN (${keys.map(() => '?').join(',')}) LIMIT 1`).bind(...keys).first();
+  return row?.text || '';
+}
+export async function cacheTranscript(db, keys, text, source) {
+  if (!keys.length || !text) return;
+  const now = Math.floor(Date.now() / 1000);
+  await db.batch(keys.map(k => db.prepare('INSERT INTO podcast_transcripts (key, text, source, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO NOTHING').bind(k, text, source, now)));
+}
+
+/** Starts transcription of an episode's audio. Returns true when a job was queued. */
+export async function startTranscription(env, db, { userId, entryId, audioUrl, origin, cacheKeys = [] }) {
+  if (!deepgramEnabled(env) || !isHttp(audioUrl)) return false;
+  const now = Math.floor(Date.now() / 1000);
+  const token = [...crypto.getRandomValues(new Uint8Array(24))].map(b => b.toString(16).padStart(2, '0')).join('');
+  await db.prepare('DELETE FROM transcript_jobs WHERE created_at < ?').bind(now - JOB_TTL_SEC).run();
+  const q = new URLSearchParams({ model: 'nova-3', smart_format: 'true', paragraphs: 'true', callback: `${origin}/hooks/deepgram/${token}` });
+  const res = await fetch(`${env.DEEPGRAM_URL || 'https://api.deepgram.com'}/v1/listen?${q}`, {
+    method: 'POST', headers: { Authorization: `Token ${env.DEEPGRAM_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: audioUrl }), signal: AbortSignal.timeout(15000)
+  }).catch(err => ({ ok: false, status: 0, text: async () => err.message }));
+  if (!res.ok) {
+    console.error('Deepgram start failed', res.status, (await res.text().catch(() => '')).slice(0, 300));
+    return false;
+  }
+  await db.prepare('INSERT INTO transcript_jobs (token, user_id, entry_id, cache_keys, created_at) VALUES (?, ?, ?, ?, ?)').bind(token, userId, entryId, JSON.stringify(cacheKeys), now).run();
+  await db.prepare("UPDATE entries SET transcript_status = 'pending' WHERE user_id = ? AND id = ?").bind(userId, entryId).run();
+  return true;
+}
+
+/** Text from a Deepgram result: paragraphs when available, else the flat transcript. */
+export function deepgramText(data) {
+  const alt = data?.results?.channels?.[0]?.alternatives?.[0] || {};
+  return String(alt.paragraphs?.transcript || alt.transcript || '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/** Deepgram's callback. Single use per token. Returns { userId, entryId, text } or null. */
+export async function finishTranscription(db, token, data) {
+  if (!/^[0-9a-f]{48}$/.test(token)) return null;
+  const job = await db.prepare('DELETE FROM transcript_jobs WHERE token = ? RETURNING user_id, entry_id, cache_keys, created_at').bind(token).first();
+  if (!job || job.created_at < Math.floor(Date.now() / 1000) - JOB_TTL_SEC) return null;
+  let cacheKeys = [];
+  try { cacheKeys = JSON.parse(job.cache_keys || '[]'); } catch { /* none */ }
+  return { userId: job.user_id, entryId: job.entry_id, cacheKeys, text: deepgramText(data) };
+}

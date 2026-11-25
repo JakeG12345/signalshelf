@@ -600,12 +600,17 @@ async function loadEntries() {
   catch (e) { $('#list').innerHTML = `<div class="empty">Could not load entries: ${esc(e.message)}</div>`; return; }
   if (seq !== loadSeq) return; // a newer search already started
   renderList(items, !!p.toString());
+  // Episodes being transcribed: check back until they're done (about a minute each)
+  clearTimeout(pendingTimer);
+  if (items.some(i => i.transcript_status === 'pending') && pendingChecks++ < 20) pendingTimer = setTimeout(loadEntries, 30000);
+  else if (!items.some(i => i.transcript_status === 'pending')) pendingChecks = 0;
 }
+let pendingTimer, pendingChecks = 0;
 
 function card(it) {
   const thumb = safeUrl(it.thumbnail);
   const initials = esc((it.creator || it.title || '?').split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase());
-  const flag = it.status === 'to_watch' ? 'To watch' : it.transcript_status === 'missing' ? 'No transcript' : '';
+  const flag = it.status === 'to_watch' ? 'To watch' : it.transcript_status === 'missing' ? 'No transcript' : it.transcript_status === 'pending' ? 'Transcribing' : '';
   const snippet = it.match_snippet ? `<div class="snip">${esc(it.match_snippet).replace(/\[/g, '<mark>').replace(/\]/g, '</mark>')}</div>` : '';
   if (it._pending) return `<div class="card pending" data-id="${esc(it.id)}" aria-busy="true">
     <div class="thumb"><div class="ph">…</div></div>
@@ -665,7 +670,8 @@ function fillModal(e) {
     `saved ${fmtDate(e.watched_at)}`, url ? `<a href="${esc(url)}" target="_blank" rel="noopener">Open ↗</a>` : ''].filter(Boolean).join(', ');
   $('#m-warn').innerHTML = loading ? '' : e.transcript_status === 'missing'
     ? `<div class="warnbox">No transcript yet. ${e.source === 'youtube' ? 'YouTube didn\'t hand one over. Paste one below, or save the video from desktop Chrome with the extension.' : 'Paste one below if you have it.'}</div>`
-    : e.transcript_status === 'description' ? '<div class="meta" style="margin-top:6px">The "transcript" here is the episode/page description. Paste a full transcript below if you have one.</div>' : '';
+    : e.transcript_status === 'pending' ? '<div class="meta" style="margin-top:6px">Transcribing. Ready in a minute or two.</div>'
+    : e.transcript_status === 'description' ? '<div class="meta" style="margin-top:6px">This is the episode description. Paste a transcript below if you have one.</div>' : '';
   $('#m-status').value = e.status || 'watched';
   $('#m-takeaways').value = (e.key_takeaways || []).join('\n');
   $('#m-notes').value = e.personal_notes || '';
