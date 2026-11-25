@@ -82,6 +82,27 @@ async function captureApplePodcast(url, ids, fetchImpl, warnings) {
 }
 
 /** Drops tracking params so the same page shared twice maps to one entry. */
+// ---------- Spotify episodes ----------
+// Spotify doesn't give out episode audio, so the app finds the same episode in the podcast directory.
+// This reads the episode and show names from the public episode page.
+export function spotifyEpisodeId(url) {
+  try {
+    const u = new URL(url);
+    if (u.hostname !== 'open.spotify.com') return null;
+    return (u.pathname.match(/\/episode\/([A-Za-z0-9]{10,40})/) || [])[1] || null;
+  } catch { return null; }
+}
+export async function spotifyEpisodeInfo(url, fetchImpl = fetch, origin = 'https://open.spotify.com') {
+  const id = spotifyEpisodeId(url);
+  if (!id) return null;
+  const meta = readMeta(await getText(`${origin}/episode/${id}`, fetchImpl));
+  const title = (meta['og:title'] || meta['twitter:title'] || meta._title || '').replace(/\s*\|\s*Podcast on Spotify\s*$/i, '').trim();
+  const desc = meta['og:description'] || meta.description || '';
+  const show = (desc.match(/episode from (.+?) on Spotify/i) || [])[1]
+    || (meta._title || '').split(/\s+[|\u2013\u2014-]\s+/)[1] || '';
+  return title ? { id, title, show: show.trim(), image: /^https:\/\//.test(meta['og:image'] || '') ? meta['og:image'] : null } : null;
+}
+
 export function canonicalUrl(url) {
   try {
     const u = new URL(url);

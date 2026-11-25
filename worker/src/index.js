@@ -12,7 +12,7 @@ import { renderProfileHtml, renderPeopleHtml, publicItem } from '../../shared/pr
 import { createAnonymousUser, resolveUser, updateProfile, listPeople, topSignal, userByHandle, followCounts, setFollow, isFollowing, listFollowing, feed, featured, rateLimit, looksLikeKey, createAccount, changePassword, login, logout, googleEnabled, googleStart, googleCallback } from './accounts.js';
 import { YT_STATE_PREFIX, youtubeLikesStart, youtubeLikesCallback, takeYoutubeLikes, searchPodcasts, podcastEpisodes } from './imports.js';
 import { podcastTranscript, queueTranscription, runTranscription, deepgramEnabled, episodeKeys, cachedTranscript, cacheTranscript } from './podcast-transcripts.js';
-import { captureLink } from '../../shared/capture.js';
+import { captureLink, spotifyEpisodeInfo, spotifyEpisodeId } from '../../shared/capture.js';
 import { supadataProvider } from './transcripts.js';
 import { APP_VERSION, MONETIZATION_MODELS, SOURCES, STATUSES, HttpError } from '../../shared/core.js';
 import { DEFAULT_SHELF_SETTINGS, normalizeShelfSettings, shelfDataFromEntries, renderShelfHtml } from '../../shared/shelf-render.js';
@@ -189,6 +189,15 @@ async function privateApi(request, url, ctx) {
       await store.update(id, { transcript: r.text });
     }
     return json({ status: r.status, entry: slim(await store.get(id)) });
+  }
+
+  if (path === '/api/spotify-episode' && method === 'GET') {
+    const link = url.searchParams.get('url') || '';
+    if (!spotifyEpisodeId(link)) throw new HttpError(400, 'Not a Spotify episode link.');
+    await rateLimit(db, `ps:${user.id}`, 200, 3600, 'Too many lookups. Try again later.');
+    const info = await spotifyEpisodeInfo(link, fetch, env.SPOTIFY_ORIGIN || undefined).catch(() => null);
+    if (!info) throw new HttpError(404, 'Could not read that Spotify episode.');
+    return json(info);
   }
 
   if (path === '/api/ingest-url' && method === 'POST') {

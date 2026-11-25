@@ -313,6 +313,13 @@ try {
         if (audio.includes('broken')) return send({ err_code: 'REMOTE_CONTENT_ERROR', err_msg: 'could not download the audio' }, 400);
         return send({ results: { channels: [{ alternatives: [{ transcript: 'flat', paragraphs: { transcript: '\nWelcome back to the show. Today we talk about laundromats and why they print cash.\n\nFirst, the numbers.' } }] }] } });
       }
+      if (u.pathname.startsWith('/episode/')) {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        return res.end(`<html><head><title>Financial Crash Expert: Biggest Money Mistake | Podcast on Spotify</title>
+          <meta property="og:title" content="Financial Crash Expert: Biggest Money Mistake">
+          <meta property="og:description" content="Listen to this episode from The Diary Of A CEO with Steven Bartlett on Spotify. Today&#39;s guest...">
+          <meta property="og:image" content="https://i.scdn.co/image/abc"></head></html>`);
+      }
       if (u.pathname === '/feed.xml') {
         res.writeHead(200, { 'Content-Type': 'application/rss+xml' });
         const pad = '<item><title>Filler</title><guid>f</guid><description>' + 'x'.repeat(200000) + '</description></item>';
@@ -351,7 +358,7 @@ try {
   const wg = spawn('npx', ['wrangler', 'dev', '--local', '--port', String(GPORT), '--ip', '127.0.0.1', '--persist-to', gpersist,
     '--var', 'GOOGLE_CLIENT_ID:test-client', '--var', 'GOOGLE_CLIENT_SECRET:test-secret',
     '--var', `GOOGLE_TOKEN_URL:http://127.0.0.1:${mock.address().port}/token`,
-    '--var', 'DEEPGRAM_API_KEY:dg-test', '--var', `DEEPGRAM_URL:http://127.0.0.1:${mock.address().port}`,
+    '--var', `SPOTIFY_ORIGIN:http://127.0.0.1:${mock.address().port}`, '--var', 'DEEPGRAM_API_KEY:dg-test', '--var', `DEEPGRAM_URL:http://127.0.0.1:${mock.address().port}`,
     '--var', `GOOGLE_API_URL:http://127.0.0.1:${mock.address().port}`, '--var', `ITUNES_URL:http://127.0.0.1:${mock.address().port}`, '--show-interactive-dev-session=false'],
   { cwd: DIR, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false', NO_PROXY: '127.0.0.1,localhost' } });
   let glog = ''; wg.stdout.on('data', d => (glog += d)); wg.stderr.on('data', d => (glog += d));
@@ -549,6 +556,14 @@ try {
       assert.equal(bad.status, 502); assert.match(bad.body.error, /could not download the audio/);
       const e70 = (await g('/api/entries/pod_apple_70', { headers: as(k) })).body;
       assert.equal(e70.transcript_status, 'missing'); assert.equal(e70.description, 'Desc');
+    });
+    await t('Spotify episode links: names read from the episode page for matching', async () => {
+      const k = (await g('/api/auth/anon', { method: 'POST', headers: ip(95) })).body.key;
+      const r = await g('/api/spotify-episode?url=' + encodeURIComponent('https://open.spotify.com/episode/4rOoJ6Egrf8K2IrywzwOMk?si=abc'), { headers: as(k) });
+      assert.equal(r.status, 200);
+      assert.deepEqual(r.body, { id: '4rOoJ6Egrf8K2IrywzwOMk', title: 'Financial Crash Expert: Biggest Money Mistake', show: 'The Diary Of A CEO with Steven Bartlett', image: 'https://i.scdn.co/image/abc' });
+      assert.equal((await g('/api/spotify-episode?url=' + encodeURIComponent('https://example.com/episode/x'), { headers: as(k) })).status, 400);
+      assert.equal((await g('/api/spotify-episode?url=x')).status, 401);
     });
   } finally {
     wg.kill('SIGINT'); setTimeout(() => wg.kill('SIGKILL'), 2000);
