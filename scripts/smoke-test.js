@@ -39,7 +39,7 @@ const shelf = await import('../server/shelf.js');
 const cap = await import('../shared/capture.js');
 
 await t('migration v1→v2 keeps rows and moves notes', () => {
-  assert.equal(dbm.db.pragma('user_version', { simple: true }), 2);
+  assert.equal(dbm.db.pragma('user_version', { simple: true }), 3);
   const e = dbm.getEntryById('yt_AAAAAAAAAAA');
   assert.equal(e.personal_notes, 'old note');
   assert.equal(e.transcript_status, 'ok');
@@ -230,7 +230,7 @@ for (let i = 0; i < 50; i++) { try { await fetch(base + '/api/health'); break; }
 const j = async (p, o = {}) => { const r = await fetch(base + p, { ...o, headers: { 'Content-Type': 'application/json', ...(o.headers || {}) } }); return { status: r.status, body: await r.json() }; };
 
 await t('GET /api/health + /api/meta', async () => {
-  const h = await j('/api/health'); assert.equal(h.body.ok, true); assert.equal(h.body.schema, 2);
+  const h = await j('/api/health'); assert.equal(h.body.ok, true); assert.equal(h.body.schema, 3);
   const m = await j('/api/meta'); assert.ok(m.body.monetizationModels.includes('Micro-SaaS')); assert.equal(m.body.stats.total, 2);
 });
 await t('POST /api/ingest (extension payload)', async () => {

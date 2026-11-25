@@ -34,7 +34,7 @@ const TOOLS = [
   },
   {
     name: 'get_full_transcript',
-    description: 'Get the full transcript plus all metadata and annotations (rating, tags, takeaways, personal notes) for one entry.',
+    description: 'Get everything for one entry: the transcript (spoken words), the description (the show or video\'s own notes), the user\'s personal notes, your Claude notes, plus rating, tags and takeaways.',
     inputSchema: { type: 'object', required: ['id'], properties: {
       id: { type: 'string', description: 'Entry id from search or list results' },
       max_chars: { type: 'integer', minimum: 1000, maximum: 500000, default: MAX_TEXT }
@@ -58,16 +58,24 @@ const TOOLS = [
   },
   {
     name: 'rate_and_annotate',
-    description: 'Save a 1-5 rating, tags, key takeaways (e.g. a summary you wrote from the transcript) and/or personal notes on an entry. Only fields you pass change. Use add_takeaways / append_notes to add without overwriting.',
+    description: 'Save a 1-5 rating, tags, key takeaways and/or status on an entry. Only fields you pass change. Use add_takeaways to add without overwriting. For your own notes use write_claude_notes; the user\'s personal notes are theirs.',
     inputSchema: { type: 'object', required: ['id'], properties: {
       id: { type: 'string' },
       signal_rating: { type: ['integer', 'null'], minimum: 1, maximum: 5, description: '1-5, or null to clear' },
       tags: { type: 'array', items: { type: 'string' }, description: 'Replaces the tag list' },
       key_takeaways: { type: 'array', items: { type: 'string' }, description: 'Replaces all takeaways' },
       add_takeaways: { type: 'array', items: { type: 'string' }, description: 'Appends takeaways' },
-      personal_notes: { type: 'string', description: 'Replaces notes' },
-      append_notes: { type: 'string', description: 'Appends to notes' },
       status: STATUS
+    } },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+  },
+  {
+    name: 'write_claude_notes',
+    description: 'Write your notes on an entry, stored as "Claude notes" next to the user\'s own notes. First read it with get_full_transcript. Then write what this means for this user, using what you know about them: the ideas worth keeping, how they apply to their work and goals, and what to do next. Concise markdown. mode "replace" (default) rewrites your notes; "append" adds to them.',
+    inputSchema: { type: 'object', required: ['id', 'notes'], properties: {
+      id: { type: 'string' },
+      notes: { type: 'string', description: 'Markdown' },
+      mode: { type: 'string', enum: ['replace', 'append'], default: 'replace' }
     } },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
   },
@@ -90,7 +98,7 @@ const TOOLS = [
 const compact = e => ({
   id: e.id, source: e.source, title: e.title, creator: e.creator, url: e.url, watched_at: e.watched_at,
   signal_rating: e.signal_rating, tags: e.monetization_models, key_takeaways: e.key_takeaways,
-  status: e.status, transcript_status: e.transcript_status,
+  status: e.status, transcript_status: e.transcript_status, has_claude_notes: !!e.claude_notes,
   transcript_chars: e.transcript_chars ?? (e.transcript || '').length,
   ...(e.match_snippet ? { match_snippet: e.match_snippet } : {})
 });
@@ -131,8 +139,15 @@ async function callTool(name, a = {}, { store, origin, user, social = true, guar
       }
       return text((await store.query({ model: tag, sort: 'rating', limit: int(a.limit, 25, 1, 100) })).map(compact));
     }
+    case 'write_claude_notes': {
+      if (!String(a.notes || '').trim()) return toolError('notes is required');
+      const patch = a.mode === 'append' ? { append_claude_notes: a.notes } : { claude_notes: a.notes };
+      const e = await store.update(String(a.id || ''), patch);
+      return text({ ...compact(e), claude_notes: e.claude_notes });
+    }
     case 'rate_and_annotate': {
-      const { id, tags, ...rest } = a;
+      const { id, tags, append_notes, ...rest } = a;
+      if (append_notes) rest.append_claude_notes = append_notes; // older clients: Claude's notes never go in the user's own
       if (tags !== undefined) rest.monetization_models = tags;
       const patch = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined));
       if (!Object.keys(patch).length) return toolError('Pass at least one field to update.');

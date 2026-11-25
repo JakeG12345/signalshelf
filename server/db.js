@@ -27,6 +27,8 @@ const V2_COLUMNS = {
   status: "TEXT DEFAULT 'watched'",
   thumbnail: 'TEXT',
   transcript_status: 'TEXT',
+  description: 'TEXT',
+  claude_notes: 'TEXT',
   created_at: 'TEXT',
   updated_at: 'TEXT'
 };

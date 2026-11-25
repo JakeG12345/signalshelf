@@ -1,7 +1,7 @@
 // Pure data logic shared by the local Node server (better-sqlite3) and the Cloudflare Worker (D1).
 // No I/O here: everything returns SQL + params or plain values.
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 export const APP_VERSION = '2.1.0';
 
 export const MONETIZATION_MODELS = [
@@ -37,6 +37,8 @@ export const SCHEMA_SQL = [
     status TEXT DEFAULT 'watched',
     thumbnail TEXT,
     transcript_status TEXT,
+    description TEXT,
+    claude_notes TEXT,
     created_at TEXT,
     updated_at TEXT
   )`,
@@ -53,7 +55,8 @@ export const SCHEMA_SQL = [
 export const REINDEX_SQL = [
   `DELETE FROM entries_fts WHERE id = ?`,
   `INSERT INTO entries_fts (id, title, creator, transcript, notes, takeaways, models)
-   SELECT e.id, e.title, COALESCE(e.creator, ''), COALESCE(e.transcript, ''), COALESCE(e.personal_notes, ''),
+   SELECT e.id, e.title, COALESCE(e.creator, ''), COALESCE(e.transcript, '') || char(10) || COALESCE(e.description, ''),
+     COALESCE(e.personal_notes, '') || char(10) || COALESCE(e.claude_notes, ''),
      COALESCE((SELECT group_concat(value, char(10)) FROM json_each(e.key_takeaways)), ''),
      COALESCE((SELECT group_concat(value, ', ') FROM json_each(e.monetization_models)), '')
    FROM entries e WHERE e.id = ?`
@@ -66,7 +69,8 @@ export function reindexStatements(id, userId) {
     { sql: 'DELETE FROM entries_fts WHERE id = ? AND user_id = ?', params: [id, userId] },
     {
       sql: `INSERT INTO entries_fts (id, user_id, title, creator, transcript, notes, takeaways, models)
-        SELECT e.id, e.user_id, e.title, COALESCE(e.creator, ''), COALESCE(e.transcript, ''), COALESCE(e.personal_notes, ''),
+        SELECT e.id, e.user_id, e.title, COALESCE(e.creator, ''), COALESCE(e.transcript, '') || char(10) || COALESCE(e.description, ''),
+          COALESCE(e.personal_notes, '') || char(10) || COALESCE(e.claude_notes, ''),
           COALESCE((SELECT group_concat(value, char(10)) FROM json_each(e.key_takeaways)), ''),
           COALESCE((SELECT group_concat(value, ', ') FROM json_each(e.monetization_models)), '')
         FROM entries e WHERE e.id = ? AND e.user_id = ?`,
@@ -211,7 +215,7 @@ export function buildEntriesQuery({
 export function buildUpsert({
   id, source = 'youtube', title, creator = '', url = '', published_at = null, watched_at = null,
   duration_sec = null, thumbnail = null, transcript = '', transcript_status = null, tags = null,
-  status = 'watched', bumpWatched = true
+  status = 'watched', bumpWatched = true, description = null
 }, now = new Date().toISOString(), userId) {
   validateCapture({ id, title, source });
   const tr = String(transcript ?? '').slice(0, 1_500_000); // stays under D1's 2 MB row limit
@@ -223,8 +227,8 @@ export function buildUpsert({
   const scoped = userId !== undefined;
   return expandNumbered({
     sql: `INSERT INTO entries (id, ${scoped ? 'user_id, ' : ''}source, title, creator, url, published_at, watched_at, duration_sec, thumbnail,
-        tags, transcript, transcript_status, monetization_models, key_takeaways, personal_notes, status, created_at, updated_at)
-      VALUES (?1, ${scoped ? '?17, ' : ''}?2, ?3, ?4, ?5, ?6, COALESCE(?7, ?14), ?8, ?9, ?10, ?11, ?12, '[]', '[]', '', ?13, ?14, ?14)
+        tags, transcript, transcript_status, monetization_models, key_takeaways, personal_notes, status, description, created_at, updated_at)
+      VALUES (?1, ${scoped ? '?17, ' : ''}?2, ?3, ?4, ?5, ?6, COALESCE(?7, ?14), ?8, ?9, ?10, ?11, ?12, '[]', '[]', '', ?13, ?18, ?14, ?14)
       ON CONFLICT(${scoped ? 'user_id, id' : 'id'}) DO UPDATE SET
         title = excluded.title,
         creator = COALESCE(NULLIF(excluded.creator, ''), entries.creator),
@@ -234,6 +238,7 @@ export function buildUpsert({
         thumbnail = COALESCE(excluded.thumbnail, entries.thumbnail),
         transcript = CASE WHEN length(excluded.transcript) > 0 THEN excluded.transcript ELSE entries.transcript END,
         transcript_status = CASE WHEN length(excluded.transcript) > 0 THEN excluded.transcript_status ELSE entries.transcript_status END,
+        description = COALESCE(NULLIF(excluded.description, ''), entries.description),
         tags = CASE WHEN ?15 THEN excluded.tags ELSE entries.tags END,
         watched_at = CASE WHEN ?7 IS NOT NULL THEN ?7 WHEN ?16 THEN ?14 ELSE entries.watched_at END,
         status = CASE WHEN ?16 AND entries.status = 'to_watch' THEN 'watched' ELSE entries.status END,
@@ -241,7 +246,7 @@ export function buildUpsert({
     params: [
       id, source, String(title).trim().slice(0, 500), creator || '', url || '', published_at || null, watched_at || null,
       dur, thumbnail || null, tagsJson, tr, tStatus, initialStatus, now, tags ? 1 : 0, bumpWatched ? 1 : 0,
-      scoped ? userId : null
+      scoped ? userId : null, description ? String(description).trim().slice(0, 50000) : null
     ]
   });
 }
@@ -268,6 +273,13 @@ export function buildPatch(current, patch = {}, now = new Date().toISOString()) 
     set('key_takeaways', JSON.stringify(normalizeTakeaways([...new Set(merged)])));
   }
   if ('personal_notes' in patch) set('personal_notes', String(patch.personal_notes ?? '').slice(0, 20000));
+  // Claude's own notes, written through the connector; kept apart from the user's notes
+  if ('claude_notes' in patch) set('claude_notes', String(patch.claude_notes ?? '').slice(0, 50000));
+  if ('append_claude_notes' in patch && String(patch.append_claude_notes || '').trim()) {
+    const base = current.claude_notes ? current.claude_notes + '\n\n' : '';
+    set('claude_notes', (base + String(patch.append_claude_notes).trim()).slice(0, 50000));
+  }
+  if ('description' in patch) set('description', String(patch.description ?? '').slice(0, 50000));
   if ('append_notes' in patch && String(patch.append_notes || '').trim()) {
     const base = current.personal_notes ? current.personal_notes + '\n\n' : '';
     set('personal_notes', (base + String(patch.append_notes).trim()).slice(0, 20000));

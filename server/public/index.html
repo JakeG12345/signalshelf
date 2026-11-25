@@ -141,6 +141,7 @@
   .tagpick button.on { background:var(--ink); border-color:var(--ink); color:var(--plate); font-weight:650; }
   .tagpick input { padding:4px 11px; border-radius:999px; font-size:13px; width:170px; }
   textarea { width:100%; resize:vertical; line-height:1.5; }
+  .desc { white-space:pre-wrap; font-size:14px; color:#2c3033; margin-top:8px; max-height:320px; overflow-y:auto; }
   #m-transcript { min-height:220px; font-size:14px; color:#2c3033; }
   .mfoot { display:flex; justify-content:space-between; align-items:center; margin-top:22px; gap:10px; flex-wrap:wrap; }
   .dirty { color:var(--warn); font-size:13px; }
@@ -284,8 +285,16 @@
     <label class="lbl">Key takeaways <span>(one per line)</span></label>
     <textarea id="m-takeaways" rows="5" placeholder="What was worth remembering"></textarea>
 
-    <label class="lbl">Personal notes <span>(private, never published)</span></label>
+    <label class="lbl">Claude notes</label>
+    <textarea id="m-cnotes" rows="5" placeholder="Empty. In Claude, ask it to write notes on this episode."></textarea>
+
+    <label class="lbl">Your notes</label>
     <textarea id="m-notes" rows="4" placeholder="Only you see these"></textarea>
+
+    <details id="m-ddetails" hidden>
+      <summary>Description</summary>
+      <div id="m-desc" class="desc"></div>
+    </details>
 
     <details id="m-tdetails">
       <summary id="m-tsummary">Transcript</summary>
@@ -681,9 +690,14 @@ function renderTags() {
 }
 function setDirty(v = true) { dirty = v; $('#m-dirty').textContent = v ? 'Unsaved changes' : ''; }
 
+function fillDescription(e) {
+  const d = String(e.description || '').trim();
+  $('#m-ddetails').hidden = !d;
+  $('#m-desc').textContent = d;
+}
 async function openItem(id) {
   const cached = ITEMS.get(id);
-  if (cached) fillModal({ ...cached, transcript: null, personal_notes: null }); // instant
+  if (cached) fillModal({ ...cached, transcript: null, personal_notes: null, claude_notes: null, description: null }); // instant
   let e;
   try { e = await api('/api/entries/' + encodeURIComponent(id)); }
   catch (err) { if (!cached) toast(err.message, true); else $('#m-tsummary').textContent = 'Transcript (could not load)'; return; }
@@ -691,6 +705,8 @@ async function openItem(id) {
   if (cached && dirty) { // keep what they've typed; just fill the slow fields
     current = { ...e };
     if (!$('#m-notes').value) $('#m-notes').value = e.personal_notes || '';
+    if (!$('#m-cnotes').value) $('#m-cnotes').value = e.claude_notes || '';
+    fillDescription(e);
     $('#m-transcript').value = e.transcript || '';
     $('#m-tsummary').textContent = `Transcript (${(e.transcript || '').length.toLocaleString()} chars)`;
     return;
@@ -714,6 +730,9 @@ function fillModal(e) {
   $('#m-takeaways').value = (e.key_takeaways || []).join('\n');
   $('#m-notes').value = e.personal_notes || '';
   $('#m-notes').placeholder = loading ? 'Loading…' : 'Only you see these';
+  $('#m-cnotes').value = e.claude_notes || '';
+  $('#m-cnotes').placeholder = loading ? 'Loading…' : 'Empty. In Claude, ask it to write notes on this.';
+  fillDescription(e);
   $('#m-transcript').value = e.transcript || '';
   $('#m-tsummary').textContent = loading ? 'Transcript (loading…)' : `Transcript (${(e.transcript || '').length.toLocaleString()} chars)`;
   if (!$('#modal').classList.contains('open')) {
@@ -739,9 +758,11 @@ async function saveItem() {
     monetization_models: [...draft.models],
     key_takeaways: $('#m-takeaways').value,
     personal_notes: $('#m-notes').value,
+    claude_notes: $('#m-cnotes').value,
     status: $('#m-status').value
   };
-  if (current.transcript === null) delete patch.personal_notes; // notes hadn't loaded: don't overwrite them
+  if (current.transcript === null) { delete patch.personal_notes; delete patch.claude_notes; } // notes hadn't loaded: don't overwrite them
+  else if (patch.claude_notes === (current.claude_notes || '')) delete patch.claude_notes;
   else if ($('#m-transcript').value !== (current.transcript || '')) patch.transcript = $('#m-transcript').value;
   const id = current.id;
   const before = ITEMS.get(id) ? { ...ITEMS.get(id) } : null;
@@ -843,7 +864,7 @@ $('#m-tags').addEventListener('keydown', e => {
   if (v && ![...draft.models].some(x => x.toLowerCase() === v.toLowerCase())) { draft.models.add(v); renderTags(); setDirty(); }
   $('#m-newtag').focus();
 });
-['#m-title', '#m-takeaways', '#m-notes', '#m-transcript'].forEach(s => $(s).addEventListener('input', () => setDirty()));
+['#m-title', '#m-takeaways', '#m-notes', '#m-cnotes', '#m-transcript'].forEach(s => $(s).addEventListener('input', () => setDirty()));
 $('#m-status').addEventListener('change', () => setDirty());
 $('#m-save').addEventListener('click', saveItem);
 $('#m-delete').addEventListener('click', deleteItem);
@@ -914,8 +935,7 @@ document.addEventListener('click', e => { if (!e.target.closest('.addwrap')) clo
 async function savePodcastEpisode(i, status) {
   return api('/api/ingest', { method: 'POST', body: JSON.stringify({
     id: i.id, source: 'apple_podcasts', title: i.title, creator: i.creator, url: i.url, duration_sec: i.duration_sec,
-    watched_at: i.watched_at, published_at: i.published_at, thumbnail: i.thumbnail, transcript: i.description,
-    transcript_status: i.description ? 'description' : 'missing', status,
+    watched_at: i.watched_at, published_at: i.published_at, thumbnail: i.thumbnail, description: i.description, status,
     feed_url: i.feed_url, episode_guid: i.episode_guid, enclosure_url: i.enclosure_url }) });
 }
 // Apple Podcasts links: look the episode up here (Apple blocks our server) so it gets its audio and transcript.

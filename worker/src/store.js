@@ -21,6 +21,8 @@ const ENTRY_COLUMNS = `
     status TEXT DEFAULT 'watched',
     thumbnail TEXT,
     transcript_status TEXT,
+    description TEXT,
+    claude_notes TEXT,
     created_at TEXT,
     updated_at TEXT`;
 
@@ -115,6 +117,17 @@ export function ensureSchema(db) {
         .filter(([c]) => !userCols.includes(c));
       if (add.length) await db.batch(add.map(([c, t]) => db.prepare(`ALTER TABLE users ADD COLUMN ${c} ${t}`)));
       await db.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub)').run();
+      const entryCols = ((await db.prepare('PRAGMA table_info(entries)').all()).results || []).map(c => c.name);
+      if (!entryCols.includes('description')) {
+        await db.batch([
+          db.prepare('ALTER TABLE entries ADD COLUMN description TEXT'),
+          db.prepare('ALTER TABLE entries ADD COLUMN claude_notes TEXT'),
+          // Podcasts used to keep the show notes in the transcript field: move them to description
+          db.prepare(`UPDATE entries SET description = transcript, transcript = '',
+              transcript_status = CASE WHEN transcript_status = 'pending' THEN 'pending' ELSE 'missing' END
+            WHERE source = 'apple_podcasts' AND transcript_status IN ('description', 'pending')`)
+        ]);
+      }
       await db.prepare('DROP TABLE IF EXISTS transcript_jobs').run(); // replaced by stt_jobs
     })().catch(err => { schemaReady = null; throw err; });
   }

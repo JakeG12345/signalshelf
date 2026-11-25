@@ -144,6 +144,10 @@ async function privateApi(request, url, ctx) {
 
   if (path === '/api/ingest' && method === 'POST') {
     const b = await readJson(request);
+    // Podcasts: the show's own notes go in description; transcript is only ever spoken words
+    if (b.source === 'apple_podcasts' && (b.transcript_status === 'description' || b.transcript_status === 'missing')) {
+      b.description = b.description || b.transcript; b.transcript = ''; b.transcript_status = null;
+    }
     const existing = await store.get(String(b.id || ''));
     if (!existing) await guardCapture();
     // Podcasts: swap the description for the show's published transcript when there is one
@@ -162,7 +166,7 @@ async function privateApi(request, url, ctx) {
       id: b.id, source: b.source || 'youtube', title: String(b.title || '').trim(), creator: b.creator, url: b.url,
       duration_sec: b.duration_sec, transcript: b.transcript, published_at: b.published_at || null,
       thumbnail: b.thumbnail || null, transcript_status: b.transcript_status || null, tags: b.tags || null,
-      watched_at: validDate(b.watched_at)
+      watched_at: validDate(b.watched_at), description: b.description || null
     }));
     if (STATUSES.includes(b.status) && b.status !== entry.status) entry.status = (await store.update(entry.id, { status: b.status })).status;
     // No published transcript: queue speech-to-text; the app runs it next via /api/transcribe/<id>
@@ -192,6 +196,7 @@ async function privateApi(request, url, ctx) {
     if (!link) throw new HttpError(400, 'url is required');
     await guardCapture();
     const { warnings, ...data } = await ctx.capture(link);
+    if (data.source === 'apple_podcasts' && data.transcript_status === 'description') { data.description = data.transcript; data.transcript = ''; data.transcript_status = null; }
     let entry = await store.upsert({ ...data, watched_at: validDate(watched_at) });
     if (status && STATUSES.includes(status)) entry = await store.update(entry.id, { status });
     entry = slim(entry);
@@ -262,7 +267,9 @@ async function privateApi(request, url, ctx) {
       `# ${e.title}`,
       [e.creator, e.url, e.signal_rating ? `Rated ${e.signal_rating}/5` : '', (e.monetization_models || []).join(', ')].filter(Boolean).join(' | '),
       e.key_takeaways?.length ? `## Takeaways\n${e.key_takeaways.map(t => `- ${t}`).join('\n')}` : '',
-      e.personal_notes ? `## Notes\n${e.personal_notes}` : '',
+      e.claude_notes ? `## Claude notes\n${e.claude_notes}` : '',
+      e.personal_notes ? `## My notes\n${e.personal_notes}` : '',
+      e.description ? `## Description\n${e.description}` : '',
       e.transcript ? `## Transcript\n${e.transcript}` : ''
     ].filter(Boolean).join('\n\n')).join('\n\n---\n\n');
     return new Response(md, { headers: { 'Content-Type': 'text/markdown; charset=utf-8', 'Cache-Control': 'no-store',

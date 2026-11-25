@@ -219,7 +219,7 @@ try {
   const cb = await connect(B);
   await t('initialize + tools/list', async () => {
     assert.equal(ca.getServerVersion().name, 'signal-shelf');
-    assert.equal((await ca.listTools()).tools.length, 8);
+    assert.equal((await ca.listTools()).tools.length, 9);
   });
   await t('each Claude connection only sees its own shelf', async () => {
     assert.match((await call(ca, 'search_transcripts', { query: 'niche' })).text, /yt_AAAAAAAAAAA/);
@@ -230,7 +230,17 @@ try {
   await t('rate_and_annotate + shelf link', async () => {
     const r = JSON.parse((await call(ca, 'rate_and_annotate', { id: 'web_1', signal_rating: 4, add_takeaways: ['charge annually'], append_notes: 'from Claude' })).text);
     assert.equal(r.signal_rating, 4);
-    assert.equal(JSON.parse((await call(ca, 'get_full_transcript', { id: 'web_1' })).text).personal_notes, 'from Claude');
+    const full = JSON.parse((await call(ca, 'get_full_transcript', { id: 'web_1' })).text);
+    assert.equal(full.claude_notes, 'from Claude', 'old append_notes lands in Claude notes'); assert.equal(full.personal_notes, '', 'never in the user\'s notes');
+    const w = JSON.parse((await call(ca, 'write_claude_notes', { id: 'web_1', notes: 'CLAUDE-NOTE-X: matters for your agency' })).text);
+    assert.equal(w.claude_notes, 'CLAUDE-NOTE-X: matters for your agency'); assert.equal(w.has_claude_notes, true);
+    await call(ca, 'write_claude_notes', { id: 'web_1', notes: 'second thought', mode: 'append' });
+    assert.equal(JSON.parse((await call(ca, 'get_full_transcript', { id: 'web_1' })).text).claude_notes, 'CLAUDE-NOTE-X: matters for your agency\n\nsecond thought');
+    assert.ok((await call(cb, 'write_claude_notes', { id: 'web_1', notes: 'x' })).isError, 'other users cannot write');
+    assert.equal((await j('/api/entries?q=agency', { headers: as(A) })).body.some(e => e.id === 'web_1'), true, 'Claude notes are searchable');
+    for (const p of ['/u/ryan_builds', '/u/ryan_builds/shelf.json']) assert.ok(!(await (await fetch(base + p)).text()).includes('CLAUDE-NOTE-X'), 'never public: ' + p);
+    const md = await (await fetch(base + '/api/export?format=md', { headers: as(A) })).text();
+    assert.ok(md.includes('## Claude notes\nCLAUDE-NOTE-X'));
     assert.equal(JSON.parse((await call(ca, 'get_public_shelf')).text).url, `${base}/u/ryan_builds`);
     assert.ok((await call(ca, 'save_link', { url: 'not a link' })).isError);
   });
@@ -493,10 +503,12 @@ try {
       assert.ok(!full.transcript.includes('-->') && !full.transcript.includes('<v'));
       // Episode with no published transcript keeps its description; one far down the feed is still found
       const a2 = await save({ id: 'pod_apple_2', title: 'No transcript', episode_guid: 'ep-guid-2' });
-      assert.equal(a2.body.entry.transcript_status, 'description');
+      assert.equal(a2.body.entry.transcript_status, 'missing');
+      const d2 = (await g('/api/entries/pod_apple_2', { headers: as(k) })).body;
+      assert.equal(d2.description, 'Just the description', 'show notes kept as description'); assert.equal(d2.transcript, '', 'transcript is only spoken words');
       // Bad feed address: still saves
       const a3 = await save({ id: 'pod_apple_3', title: 'X', episode_guid: 'nope', feed_url: 'not a url' });
-      assert.equal(a3.status, 200); assert.equal(a3.body.entry.transcript_status, 'description');
+      assert.equal(a3.status, 200); assert.equal(a3.body.entry.transcript_status, 'missing');
     });
     await t('podcasts without a published transcript get transcribed (Deepgram), reused, errors shown', async () => {
       const k = (await g('/api/auth/anon', { method: 'POST', headers: ip(81) })).body.key;
@@ -514,6 +526,7 @@ try {
       assert.equal(dgCalls.at(-1).audio, 'https://cdn.example/ep50.mp3'); assert.equal(dgCalls.at(-1).model, 'nova-3');
       const e = (await g('/api/entries/pod_apple_50', { headers: as(k) })).body;
       assert.ok(e.transcript.startsWith('Welcome back to the show.') && e.transcript.includes('\n\nFirst, the numbers.'));
+      assert.equal(e.description, 'Description only', 'show notes kept alongside the transcript');
       assert.equal((await g('/api/entries?q=laundromats', { headers: as(k) })).body.length, 1, 'searchable');
       assert.equal((await g('/api/entries?q=laundromats', { headers: as(other) })).body.length, 0, 'only the owner');
       assert.equal((await g('/api/transcribe/pod_apple_50', { method: 'POST', headers: as(k) })).body.status, 'none', 'job is single use');
@@ -528,13 +541,14 @@ try {
       await g('/api/ingest', { method: 'POST', headers: as(k), body: JSON.stringify({ id: 'pod_apple_60', source: 'apple_podcasts', title: 'Hand', transcript: 'x' }) });
       await g('/api/entries/pod_apple_60', { method: 'PATCH', headers: as(k), body: JSON.stringify({ transcript: 'MY-PRIVATE-PASTE '.repeat(20) }) });
       const third = await g('/api/ingest', { method: 'POST', headers: as(other), body: JSON.stringify({ id: 'pod_apple_60', source: 'apple_podcasts', title: 'Hand', transcript: 'desc', transcript_status: 'description' }) });
-      assert.equal(third.body.entry.transcript_status, 'description');
+      assert.equal(third.body.entry.transcript_status, 'missing');
       assert.ok(!(await g('/api/entries/pod_apple_60', { headers: as(other) })).body.transcript.includes('MY-PRIVATE-PASTE'));
       // Deepgram can't fetch the audio: readable error, episode back to its description
       await g('/api/ingest', { method: 'POST', headers: as(k), body: JSON.stringify({ id: 'pod_apple_70', source: 'apple_podcasts', title: 'Broken', transcript: 'Desc', transcript_status: 'description', enclosure_url: 'https://cdn.example/broken.mp3' }) });
       const bad = await g('/api/transcribe/pod_apple_70', { method: 'POST', headers: as(k) });
       assert.equal(bad.status, 502); assert.match(bad.body.error, /could not download the audio/);
-      assert.equal((await g('/api/entries/pod_apple_70', { headers: as(k) })).body.transcript_status, 'description');
+      const e70 = (await g('/api/entries/pod_apple_70', { headers: as(k) })).body;
+      assert.equal(e70.transcript_status, 'missing'); assert.equal(e70.description, 'Desc');
     });
   } finally {
     wg.kill('SIGINT'); setTimeout(() => wg.kill('SIGKILL'), 2000);
