@@ -142,6 +142,14 @@
   .connect ol { padding-left:20px; margin:6px 0; }
   .connect li { margin-bottom:6px; }
   .connect p { margin:6px 0; }
+  .crow { display:flex; gap:12px; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--line); }
+  .crow > div { display:flex; flex-direction:column; gap:2px; min-width:0; }
+  .crow span { color:var(--mute); font-size:14px; }
+  .crow button { flex:none; }
+  .cgroup { border-bottom:1px solid var(--line); }
+  .cgroup > summary { font-size:16px; margin:0; padding:14px 0; }
+  .cgroup .crow:last-child { border-bottom:0; }
+  .cgroup ol { margin:0 0 12px; }
   .copy { font-size:13px; padding:4px 10px; border-color:var(--line); }
   .src { margin-top:14px; }
   .src > div { border:1.5px solid var(--line); border-radius:6px; padding:16px; background:var(--panel); }
@@ -350,43 +358,44 @@
       </form>
     </div>
 
-    <details id="a-connect">
-    <summary>Connect iPhone, Claude and Chrome</summary>
-    <label class="lbl">Private link</label>
-    <p class="meta" style="margin-top:0" id="a-synctext"></p>
-    <code id="c-sync"></code><button class="copy" data-copy="c-sync">Copy</button>
-
-    <label class="lbl">iPhone · add to home screen</label>
-    <p>In Safari tap <b>Share → Add to Home Screen</b>. It opens like an app.</p>
-
-    <label class="lbl">iPhone · share from YouTube / Podcasts</label>
-    <div id="sc-oneTap" hidden>
-      <button class="primary" type="button" id="c-shortcut-install">Add to iPhone</button>
-      <p class="meta">Open this page in Safari on your iPhone, tap the button, then <b>Add Shortcut</b>. Log in here in Safari once so saves go to your shelf.</p>
-    </div>
-    <details id="sc-manual">
-      <summary style="cursor:pointer">Set it up by hand</summary>
-      <ol>
-        <li>Open <b>Shortcuts</b> → <b>+</b> → name it <b>Save to Signal Shelf</b>.</li>
-        <li>Tap <b>ⓘ</b> → turn on <b>Show in Share Sheet</b>.</li>
-        <li>Add action <b>URL Encode</b> (input: Shortcut Input).</li>
-        <li>Add action <b>Open URLs</b>: paste this, then add the <i>URL Encoded Text</i> variable right after it:
-          <code id="c-shortcut"></code><button class="copy" data-copy="c-shortcut">Copy</button></li>
+    <details class="cgroup" id="a-connect">
+      <summary>iPhone</summary>
+      <div class="crow">
+        <div><b>Add the app</b><span>In Safari: Share, then Add to Home Screen.</span></div>
+      </div>
+      <div class="crow">
+        <div><b>Save from YouTube and Podcasts</b><span>Adds Signal Shelf to the share menu.</span></div>
+        <button class="primary" type="button" id="c-shortcut-install" hidden>Add to iPhone</button>
+      </div>
+      <ol id="sc-manual">
+        <li>Open <b>Shortcuts</b>, tap <b>+</b>, name it <b>Save to Signal Shelf</b>.</li>
+        <li>Tap <b>ⓘ</b> and turn on <b>Show in Share Sheet</b>.</li>
+        <li>Add <b>URL Encode</b> (input: Shortcut Input).</li>
+        <li>Add <b>Open URLs</b>: paste your link, then add <i>URL Encoded Text</i> right after it. <button class="copy" type="button" id="c-shortcut-copy">Copy link</button></li>
       </ol>
     </details>
-    <p class="meta">Then in YouTube or Podcasts: Share → Save to Signal Shelf. It opens with the item added, ready to rate.</p>
+    <details class="cgroup">
+      <summary>Claude</summary>
+      <div class="crow">
+        <div><b>Connect your shelf</b><span>claude.ai: Settings, Connectors, Add custom connector. Paste the link.</span></div>
+        <button class="copy" type="button" id="c-mcp-copy">Copy link</button>
+      </div>
+    </details>
+    <details class="cgroup">
+      <summary>Chrome</summary>
+      <div class="crow">
+        <div><b>Chrome extension</b><span>Paste the key in the extension's settings.</span></div>
+        <button class="copy" type="button" id="c-key-copy">Copy key</button>
+      </div>
+    </details>
 
-    <label class="lbl">Claude (iPhone, web, desktop)</label>
-    <p>On claude.ai: <b>Settings → Connectors → Add custom connector</b>, name <b>Signal Shelf</b>, URL:</p>
-    <code id="c-mcp"></code><button class="copy" data-copy="c-mcp">Copy</button>
-    <p class="meta">Then ask Claude things like “what are my top-rated AI agency videos?”</p>
-
-    <label class="lbl">Chrome extension (desktop)</label>
-    <p>In the extension's <b>Server settings</b> use URL <code id="c-origin"></code> and key <code id="c-key"></code><button class="copy" data-copy="c-key">Copy key</button></p>
-
-    <label class="lbl">Advanced · open a shelf from a private link or key</label>
-    <form class="row" id="switchform"><input id="switchkey" placeholder="Paste a private link or key" autocapitalize="none" autocorrect="off" style="flex:1;min-width:0" /><button type="submit">Switch</button></form>
-
+    <div class="crow" style="margin-top:10px">
+      <div><b>Private link</b><span id="a-synctext"></span></div>
+      <button class="copy" type="button" id="c-sync-copy">Copy link</button>
+    </div>
+    <details class="cgroup">
+      <summary>Open a different shelf</summary>
+      <form class="row" id="switchform" style="margin:8px 0"><input id="switchkey" placeholder="Paste a private link or key" autocapitalize="none" autocorrect="off" style="flex:1;min-width:0" /><button type="submit">Switch</button></form>
     </details>
 
     <label class="lbl">Your data</label>
@@ -431,7 +440,7 @@
             <summary>Use your Mac's Podcasts library</summary>
             <ol style="margin-top:10px">
               <li>On your Mac, quit the Podcasts app.</li>
-              <li>In Finder, choose <b>Go → Go to Folder</b> and paste:<br><code>~/Library/Group Containers/243LU875E5.groups.com.apple.podcasts/Documents</code></li>
+              <li>Open Finder, press <b>Shift ⌘ G</b> and paste this:<br><code>~/Library/Group Containers/243LU875E5.groups.com.apple.podcasts/Documents</code></li>
               <li>Choose <code>MTLibrary.sqlite</code> here.</li>
             </ol>
             <label class="filepick"><input type="file" id="i-pod" accept=".sqlite,.db,application/x-sqlite3,application/vnd.sqlite3"><span class="primary" style="display:inline-block;background:var(--ink);color:var(--plate);padding:9px 14px;border-radius:4px;font-weight:650">Choose MTLibrary.sqlite</span></label>
@@ -873,16 +882,13 @@ function openAccount(focusLogin = false) {
   $('#p-private').checked = !!u.is_private;
   $('#a-who').textContent = hasAccount ? '' : 'Keep your shelf and use it anywhere.';
   $('#a-who').hidden = hasAccount;
-  $('#a-synctext').textContent = hasAccount
-    ? 'Opens your shelf without typing your password (handy for the iPhone Shortcut). Don\'t share it.'
-    : 'Until you create an account, this link is the only way back to this shelf from another device. Don\'t share it.';
-  $('#c-sync').textContent = META.syncUrl || '';
-  $('#c-shortcut').textContent = META.shortcutUrl || '';
-  $('#sc-oneTap').hidden = !META.shortcutInstallUrl;
-  $('#sc-manual').open = !META.shortcutInstallUrl;
-  $('#c-mcp').textContent = META.mcpUrl || '';
-  $('#c-origin').textContent = location.origin;
-  $('#c-key').textContent = key;
+  $('#a-synctext').textContent = hasAccount ? 'Opens your shelf without a password. Keep it private.' : 'The only way back to this shelf until you sign up. Keep it private.';
+  $('#c-sync-copy').dataset.copytext = META.syncUrl || '';
+  $('#c-shortcut-copy').dataset.copytext = META.shortcutUrl || '';
+  $('#c-mcp-copy').dataset.copytext = META.mcpUrl || '';
+  $('#c-key-copy').dataset.copytext = key || '';
+  $('#c-shortcut-install').hidden = !META.shortcutInstallUrl;
+  $('#sc-manual').hidden = !!META.shortcutInstallUrl;
   $('#connect').classList.add('open'); document.body.style.overflow = 'hidden';
   if (focusLogin && !hasAccount) setTimeout(() => $('#li-handle').focus(), 50);
 }
