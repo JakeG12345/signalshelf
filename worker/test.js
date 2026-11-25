@@ -254,6 +254,8 @@ try {
           { id: 'bad id', snippet: { title: 'skip me' } }] });
         return send({ items: [{ id: 'LIKEDAAAAA2', snippet: { title: 'Liked two', channelTitle: 'Chan' }, contentDetails: { duration: 'PT45S' } }] });
       }
+      if (u.pathname === '/search' && u.searchParams.get('term') === 'broken') { res.writeHead(403, { 'Content-Type': 'text/html' }); return res.end('<html>nope</html>'); }
+      if (u.pathname === '/search' && u.searchParams.get('term') === 'odd') { res.writeHead(200, { 'Content-Type': 'text/html' }); return res.end('<html>odd</html>'); }
       if (u.pathname === '/search') return send({ results: [{ collectionId: 42, collectionName: 'My First Million', artistName: 'Hubspot', artworkUrl100: 'https://img.example/a.jpg' }, { wrapperType: 'junk' }] });
       if (u.pathname === '/lookup') return send({ results: [
         { wrapperType: 'track', kind: 'podcast', collectionId: 42 },
@@ -383,6 +385,10 @@ try {
       const u1 = (await g('/api/auth/anon', { method: 'POST', headers: ip(62) })).body.key;
       assert.equal((await g('/api/podcasts/search?q=million')).status, 401);
       assert.deepEqual((await g('/api/podcasts/search?q=m', { headers: as(u1) })).body, []);
+      const broken = await g('/api/podcasts/search?q=broken', { headers: as(u1) });
+      assert.equal(broken.status, 502); assert.match(broken.body.error, /\(403\)/, 'upstream status shown');
+      assert.equal((await g('/api/podcasts/search?q=odd', { headers: as(u1) })).status, 502, 'non-JSON handled');
+      assert.ok(mockCalls.length && true);
       const shows = (await g('/api/podcasts/search?q=first%20million', { headers: as(u1) })).body;
       assert.deepEqual(shows, [{ id: '42', title: 'My First Million', creator: 'Hubspot', thumbnail: 'https://img.example/a.jpg' }]);
       assert.ok(mockCalls.some(c => c.startsWith('/search') && c.includes('term=first+million') && c.includes('media=podcast')));

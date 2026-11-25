@@ -64,12 +64,28 @@ export async function takeYoutubeLikes(store) {
 }
 
 // ---------- Podcast search (Apple's public directory, no sign-in) ----------
+const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
 async function itunes(env, path, params) {
-  const res = await fetch(`${env.ITUNES_URL || 'https://itunes.apple.com'}${path}?${new URLSearchParams(params)}`);
-  if (!res.ok) throw new HttpError(502, 'Podcast search is busy. Try again.');
-  return res.json();
+  let res, text;
+  try {
+    res = await fetch(`${env.ITUNES_URL || 'https://itunes.apple.com'}${path}?${new URLSearchParams(params)}`,
+      { headers: { 'User-Agent': UA, Accept: 'application/json' } });
+    text = await res.text();
+  } catch (err) {
+    console.error('iTunes fetch failed', path, err?.message);
+    throw new HttpError(502, 'Podcast search is not responding. Try again.');
+  }
+  if (!res.ok) {
+    console.error('iTunes error', path, res.status, text.slice(0, 300));
+    throw new HttpError(502, `Podcast search failed (${res.status}). Try again.`);
+  }
+  try { return JSON.parse(text.trim()); }
+  catch {
+    console.error('iTunes non-JSON', path, res.status, text.slice(0, 300));
+    throw new HttpError(502, 'Podcast search sent back something odd. Try again.');
+  }
 }
-const country = request => (/^[A-Z]{2}$/.test(request.cf?.country || '') ? request.cf.country : 'US');
+const country = request => { const c = request.cf?.country; return typeof c === 'string' && /^[A-Z]{2}$/.test(c) ? c : 'US'; };
 
 export async function searchPodcasts(env, request, q) {
   const term = String(q || '').trim().slice(0, 80);
