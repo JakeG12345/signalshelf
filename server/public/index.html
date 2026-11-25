@@ -1078,6 +1078,39 @@ async function openLikes() {
   } catch (err) { toast(err.message, true); }
 }
 
+// Podcasts: search Apple's directory from this device (Apple rate-limits shared cloud addresses), server as fallback.
+function itunesJsonp(path, params) {
+  return new Promise((resolve, reject) => {
+    const cb = '__itunes' + Math.random().toString(36).slice(2);
+    const sc = document.createElement('script');
+    const done = () => { delete window[cb]; sc.remove(); clearTimeout(timer); };
+    const timer = setTimeout(() => { done(); reject(new Error('timeout')); }, 8000);
+    window[cb] = data => { done(); resolve(data); };
+    sc.onerror = () => { done(); reject(new Error('blocked')); };
+    sc.src = `https://itunes.apple.com${path}?${new URLSearchParams({ ...params, callback: cb })}`;
+    document.head.appendChild(sc);
+  });
+}
+const httpsOrNull = u => (/^https:\/\//i.test(u || '') ? u : null);
+async function podSearch(q) {
+  try {
+    const data = await itunesJsonp('/search', { media: 'podcast', entity: 'podcast', limit: '8', term: q });
+    return (data.results || []).filter(r => r.collectionId).map(r => ({
+      id: String(r.collectionId), title: r.collectionName || '', creator: r.artistName || '', thumbnail: httpsOrNull(r.artworkUrl100) }));
+  } catch { return api('/api/podcasts/search?q=' + encodeURIComponent(q)); }
+}
+async function podEpisodes(id) {
+  try {
+    const data = await itunesJsonp('/lookup', { id, entity: 'podcastEpisode', limit: '100' });
+    return (data.results || []).filter(r => r.kind === 'podcast-episode' && r.trackId).map(r => ({
+      key: `pod_apple_${r.trackId}`, kind: 'podcast', id: `pod_apple_${r.trackId}`, title: r.trackName || 'Untitled',
+      creator: r.collectionName || '', url: r.trackViewUrl || null, watched_at: null, published_at: r.releaseDate || null,
+      duration_sec: r.trackTimeMillis ? Math.round(r.trackTimeMillis / 1000) : null,
+      thumbnail: httpsOrNull(r.artworkUrl600 || r.artworkUrl160),
+      description: String(r.description || r.shortDescription || '').trim().slice(0, 20000) }));
+  } catch { return api('/api/podcasts/episodes?id=' + encodeURIComponent(id)); }
+}
+
 // Podcasts: search Apple's directory for a show, then tick episodes
 let podTimer, podSeq = 0;
 $('#i-podq').addEventListener('input', () => {
@@ -1087,7 +1120,7 @@ $('#i-podq').addEventListener('input', () => {
   podTimer = setTimeout(async () => {
     const seq = ++podSeq;
     try {
-      const shows = await api('/api/podcasts/search?q=' + encodeURIComponent(q));
+      const shows = await podSearch(q);
       if (seq !== podSeq) return;
       $('#i-shows').innerHTML = shows.map(sh => `<li class="show" data-show="${esc(sh.id)}" data-title="${esc(sh.title)}">
         ${safeUrl(sh.thumbnail) ? `<img src="${esc(sh.thumbnail)}" alt="" loading="lazy">` : '<span></span>'}
@@ -1100,7 +1133,7 @@ $('#i-shows').addEventListener('click', async e => {
   const li = e.target.closest('[data-show]'); if (!li) return;
   li.style.opacity = '.5';
   try {
-    const eps = await api('/api/podcasts/episodes?id=' + encodeURIComponent(li.dataset.show));
+    const eps = await podEpisodes(li.dataset.show);
     if (!eps.length) return toast('No episodes found for that show.', true);
     await showCandidates(eps.map(ep => ({ ...ep, length: ep.published_at ? fmtDate(ep.published_at) : '' })), li.dataset.title);
   } catch (err) { toast(err.message, true); }
