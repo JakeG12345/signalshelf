@@ -421,7 +421,7 @@
         <button class="copy" type="button" id="c-mcp-copy">Copy link</button>
       </div>
     </details>
-    <details class="cgroup">
+    <details class="cgroup" id="c-chrome">
       <summary>Chrome</summary>
       <div class="crow">
         <div><b>Chrome extension</b><span id="c-ext-text">Saves videos and podcast episodes as you watch.</span></div>
@@ -1134,6 +1134,7 @@ function openSettings() {
   const ext = document.documentElement.dataset.ssExtension === '1';
   $('#c-ext-connect').hidden = !ext;
   $('#c-ext-get').hidden = ext || !META.extensionUrl;
+  $('#c-chrome').hidden = !ext && !META.extensionUrl; // not mentioned until it's in the Chrome Web Store
   if (META.extensionUrl) $('#c-ext-get').href = META.extensionUrl;
   $('#c-key-copy').hidden = !ext && !!META.extensionUrl;
   $('#c-ext-text').textContent = ext ? 'Installed. Connect it to this shelf.' : 'Saves videos and podcast episodes as you watch.';
@@ -1251,7 +1252,7 @@ function importSource(src) {
   $('#i-src-pod').hidden = src !== 'pod';
   const likes = !!META.googleSignIn;
   $('#i-likes').hidden = !likes;
-  $('#i-ext').hidden = IS_MOBILE;
+  $('#i-ext').hidden = IS_MOBILE || !META.extensionUrl;
   $('#i-takeout').open = !likes;
   const cloud = META.mode === 'cloud';          // show search needs the cloud backend
   $('#i-podq').hidden = $('#i-shows').hidden = !cloud;
