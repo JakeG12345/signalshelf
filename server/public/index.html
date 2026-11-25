@@ -47,7 +47,8 @@
   .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
 
   /* Add bar: the one loud control on the page */
-  .addbar { margin-bottom:12px; }
+  .addbar { margin-bottom:6px; }
+  .addhint { margin:0 0 14px; font-size:13px; color:var(--mute); }
   .addbar .addwrap { flex:1; min-width:260px; position:relative; display:flex; }
   .addbar input { flex:1; min-width:0; border-color:var(--ink); padding:12px 14px; }
   .addpick { position:absolute; top:calc(100% + 6px); left:0; right:0; z-index:30; background:var(--panel); border:1.5px solid var(--ink); border-radius:6px; max-height:60vh; overflow-y:auto; box-shadow:0 10px 30px rgba(0,0,0,.12); }
@@ -237,11 +238,12 @@
   <div class="stats" id="stats">Loading…</div>
 
   <form class="row addbar" id="addform">
-    <div class="addwrap"><input id="addurl" type="text" placeholder="Paste a YouTube link or search a podcast" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" />
+    <div class="addwrap"><input id="addurl" type="text" placeholder="Paste a link or search for a podcast" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" />
       <div id="addpick" class="addpick" hidden></div></div>
     <select id="addstatus"><option value="watched">Watched</option><option value="to_watch">To watch</option></select>
     <button type="submit" class="primary">Save to shelf</button>
   </form>
+  <p class="addhint">Paste a link to any educational resource (best with YouTube, Spotify and Apple Podcasts) or search for a podcast.</p>
 
   <div class="row filters">
     <input id="q" type="search" placeholder="Search transcripts, takeaways and notes" />
@@ -568,7 +570,7 @@ const hasFilters = () => ['#q', '#f-source', '#f-rating', '#f-model', '#f-status
 function renderList(items, filtered = hasFilters()) {
   ITEMS = new Map(items.map(it => [it.id, it]));
   $('#list').innerHTML = items.length ? items.map(card).join('') :
-    `<div class="empty">${filtered ? 'Nothing matches. Clear the search or filters to see everything.' : '<b>Your shelf is empty.</b>Paste a YouTube link or search a podcast you listened to.'}</div>`;
+    `<div class="empty">${filtered ? 'Nothing matches. Clear the search or filters to see everything.' : '<b>Your shelf is empty.</b>Paste a link to any educational resource, or search for a podcast.'}</div>`;
   if (!filtered) cacheSet('entries', items.slice(0, 200));
 }
 function replaceCard(it) {
@@ -1583,7 +1585,7 @@ async function start() {
     location.hash = 'add=' + encodeURIComponent(pending.url); // handled by handleHash via hashchange
     return;
   }
-  if (WELCOME && META.mode === 'cloud') toast('Your shelf is ready. Paste a link above to add your first video.');
+  if (WELCOME && META.mode === 'cloud') toast('Your shelf is ready. Paste a link or search for a podcast to add your first one.');
 }
 start().catch(e => toast('Server unreachable: ' + e.message, true));
 </script>
