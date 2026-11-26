@@ -59,6 +59,7 @@ Hi-fi faceplate look: plate `#E6E8E2`, panel `#F4F5F0`, ink `#15171A`, mute `#5F
 0. Chrome Web Store: set `CHROME_EXTENSION_URL` in `worker/wrangler.toml` (chromewebstore.google.com/detail/...) once approved; it shows "Add to Chrome" on the landing page and in Settings, Chrome.
 1. One-tap Shortcut: set `SHORTCUT_ICLOUD_URL` in `worker/wrangler.toml` once Ryan shares the iCloud link.
 3. Share image (OG card) for profiles, for posting on X.
+7. "My week" share: one tap makes an image (1080x1080 and 1200x675) of what you watched and listened to in the last 7 days (or 5), with covers, titles and your signal bars, plus a ready-to-copy X post. Works with sharing off: it's an image the user posts, not a public page. Ryan likes it; build later.
 4. Password reset by email (needs an email provider such as Resend + a domain).
 5. Buy `signalshelf.app` (unregistered as of 24 Nov 2026) and point it at the Worker.
 6. Native iPhone wrapper (e.g. Capacitor) around the web app with a Share Extension. Skipped for launch; revisit if it gets traction.
